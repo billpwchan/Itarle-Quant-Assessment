@@ -1,7 +1,6 @@
 #include <iostream>
 #include <utility>
 #include <vector>
-#include "include/rapidcsv.h"
 #include "include/csv.hpp"
 
 class trade {
@@ -11,11 +10,9 @@ public:
     trade(float bidPrice, float askPrice, float tradePrice, long bidVolume, long askVolume, long tradeVolume,
           std::string date, int timePastMidnight, std::string conditionCode);
 
-    trade(csv::CSVRow &row);
-
+    explicit trade(csv::CSVRow &row);
 
 private:
-
     std::string identifier;
     float bidPrice;
     float askPrice;
@@ -64,12 +61,15 @@ trade::trade(csv::CSVRow &row) {
 
 int main() {
     csv::CSVReader reader("../data/scandi.csv");
-    std::vector<trade> tradesList;
+    std::vector<trade> tradeList;
+    std::vector<trade> tickList;
     for (csv::CSVRow &row: reader) {
         // Only include XT / Empty Condition Code
-        if (row[15].get<>() != "XT" and !row[15].get<>().empty()) { continue; }
-        auto *tempTrade = new trade(row);
-        tradesList.push_back(*tempTrade);
+        if (row[14].get<>() == "XT" or row[14].get<>().empty()) {
+            auto *tempTrade = new trade(row);
+            row[8].get<>() == "1" ? tradeList.push_back(*tempTrade) : tickList.push_back(*tempTrade);
+        }
     }
-    std::cout << "0. size: " << tradesList.size() << '\n';
+    std::cout << "Trade. size: " << tradeList.size() << '\n';
+    std::cout << "Tick. size: " << tickList.size() << '\n';
 }
