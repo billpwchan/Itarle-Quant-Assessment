@@ -8,15 +8,18 @@
 //#include "include/csv.hpp"
 
 
-float average(std::vector<float> const &v) {
+template<typename T>
+double average(std::vector<T> const& v) {
     if (v.empty()) {
         return 0;
     }
-    auto const count = static_cast<float>(v.size());
-    return std::reduce(v.begin(), v.end()) / count;
+
+    return std::reduce(v.begin(), v.end(), 0.0) / v.size();
 }
 
-float median(std::vector<float> &v) {
+template<typename T>
+float median(std::vector<T> &v) {
+    sort(v.begin(), v.end());
     size_t n = v.size() / 2;
     nth_element(v.begin(), v.begin() + n, v.end());
     return v[n];
@@ -26,8 +29,8 @@ int main() {
     csv::CSVReader reader("../data/scandi.csv");
     std::vector<trade> tradeList;
     std::vector<trade> tickList;
-    std::map<std::string, std::vector<int>> tradeTimeMap;
-    std::map<std::string, std::vector<int>> tickTimeMap;
+    std::map<std::string, std::vector<float>> tradeTimeMap;
+    std::map<std::string, std::vector<float>> tickTimeMap;
     std::vector<float> bidAskSpreadList;
     for (csv::CSVRow &row: reader) {
         // Only include XT / Empty Condition Code
@@ -47,8 +50,8 @@ int main() {
     std::cout << "Trade. size: " << tradeList.size() << '\n';
     std::cout << "Tick. size: " << tickList.size() << '\n';
 
-    std::vector<int> tradeAdjTimeList;
-    std::vector<int> tickAdjTimeList;
+    std::vector<float> tradeAdjTimeList;
+    std::vector<float> tickAdjTimeList;
 
     for (auto const &element: tradeTimeMap) {
         auto timeVec = element.second;
@@ -64,10 +67,15 @@ int main() {
         tickAdjTimeList.insert(tickAdjTimeList.end(), timeVec.begin(), timeVec.end());
     }
 
-    std::cout << "Trade. adj. time. size: " << tradeAdjTimeList.size() << '\n';
-    std::cout << "Tick. adj. time. size: " << tickAdjTimeList.size() << '\n';
+    std::cout << "Trade. avg. adj. time: " << average(tradeAdjTimeList) << '\n';
+    std::cout << "Tick. avg. adj. time: " << average(tickAdjTimeList) << '\n';
 
-    sort(bidAskSpreadList.begin(), bidAskSpreadList.end());
+    std::cout << "Trade. median. adj. time: " << median(tradeAdjTimeList) << '\n';
+    std::cout << "Tick. median. adj. time: " << median(tickAdjTimeList) << '\n';
+
+    std::cout << "Trade. Longest. adj. time: " << *max_element(std::begin(tradeAdjTimeList), std::end(tradeAdjTimeList)) << '\n';
+    std::cout << "Tick. Longest. adj. time: " << *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList)) << '\n';
+
     std::cout << "Average bid-ask spread: " << average(bidAskSpreadList) << '\n';
     std::cout << "Median bid-ask spread: " << median(bidAskSpreadList) << '\n';
 

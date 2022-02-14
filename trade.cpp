@@ -2,19 +2,6 @@
 
 trade::trade() {}
 
-trade::trade(float bidPrice,
-             float askPrice,
-             float tradePrice,
-             long bidVolume,
-             long askVolume,
-             long tradeVolume,
-             std::string date,
-             int timePastMidnight,
-             std::string conditionCode) : bidPrice{bidPrice}, askPrice{askPrice}, tradePrice{tradePrice},
-                                          bidVolume{bidVolume}, askVolume{askVolume}, tradeVolume{tradeVolume},
-                                          date{std::move(date)}, timePastMidnight{timePastMidnight},
-                                          conditionCode{std::move(conditionCode)} {}
-
 trade::trade(csv::CSVRow &row) {
     this->identifier = row[0].get<>();
     this->bidPrice = std::stof(row[2].get<>());
@@ -101,11 +88,11 @@ void trade::setDate(const std::string &date) {
     trade::date = date;
 }
 
-int trade::getTimePastMidnight() const {
+float trade::getTimePastMidnight() const {
     return timePastMidnight;
 }
 
-void trade::setTimePastMidnight(int timePastMidnight) {
+void trade::setTimePastMidnight(float timePastMidnight) {
     trade::timePastMidnight = timePastMidnight;
 }
 

@@ -5,9 +5,6 @@ class trade {
 public:
     trade();
 
-    trade(float bidPrice, float askPrice, float tradePrice, long bidVolume, long askVolume, long tradeVolume,
-          std::string date, int timePastMidnight, std::string conditionCode);
-
     explicit trade(csv::CSVRow &row);
 
     enum updateTypeEnum {
@@ -19,6 +16,12 @@ private:
     float askPrice;
     float tradePrice;
     long bidVolume;
+    long askVolume;
+    long tradeVolume;
+    int updateType;
+    std::string date;
+    float timePastMidnight;
+    std::string conditionCode;
 public:
     const std::string &getIdentifier() const;
 
@@ -56,20 +59,12 @@ public:
 
     void setDate(const std::string &date);
 
-    int getTimePastMidnight() const;
+    float getTimePastMidnight() const;
 
-    void setTimePastMidnight(int timePastMidnight);
+    void setTimePastMidnight(float timePastMidnight);
 
     const std::string &getConditionCode() const;
 
     void setConditionCode(const std::string &conditionCode);
-
-private:
-    long askVolume;
-    long tradeVolume;
-    int updateType;
-    std::string date;
-    int timePastMidnight;
-    std::string conditionCode;
 };
 
