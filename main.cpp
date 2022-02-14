@@ -5,11 +5,9 @@
 #include <tuple>
 #include <map>
 #include "trade.h"
-//#include "include/csv.hpp"
-
 
 template<typename T>
-double average(std::vector<T> const& v) {
+double average(std::vector<T> const &v) {
     if (v.empty()) {
         return 0;
     }
@@ -27,10 +25,17 @@ float median(std::vector<T> &v) {
 
 int main() {
     csv::CSVReader reader("../data/scandi.csv");
+    // A vector of Trade Objections that can be used for other applications.
+    // Due to time complexity, we directly use the following map and vectors instead of iterating the
+    // vector of trade objects again.
     std::vector<trade> tradeList;
     std::vector<trade> tickList;
+    // A map with date as key and a vector of trade time as value
     std::map<std::string, std::vector<float>> tradeTimeMap;
     std::map<std::string, std::vector<float>> tickTimeMap;
+    // For Round Number Effects. A Vector of Trade Prices & Volumes in Strings
+    std::vector<char> tradePriceVolumeList;
+    // A Vector of Bid Ask Spread
     std::vector<float> bidAskSpreadList;
     for (csv::CSVRow &row: reader) {
         // Only include XT / Empty Condition Code
@@ -39,6 +44,8 @@ int main() {
             if (tempTrade->getUpdateType() == trade::updateTypeEnum::TRADE) {
                 tradeList.push_back(*tempTrade);
                 tradeTimeMap[tempTrade->getDate()].push_back(tempTrade->getTimePastMidnight());
+                tradePriceVolumeList.push_back(std::to_string(tempTrade->getTradePrice()).back());
+                tradePriceVolumeList.push_back(std::to_string(tempTrade->getTradeVolume()).back());
                 bidAskSpreadList.push_back(tempTrade->getAskPrice() - tempTrade->getBidPrice());
             } else if (tempTrade->getUpdateType() == trade::updateTypeEnum::CHANGEBID or
                        tempTrade->getUpdateType() == trade::updateTypeEnum::CHANGEASK) {
@@ -73,15 +80,19 @@ int main() {
     std::cout << "Trade. median. adj. time: " << median(tradeAdjTimeList) << '\n';
     std::cout << "Tick. median. adj. time: " << median(tickAdjTimeList) << '\n';
 
-    std::cout << "Trade. Longest. adj. time: " << *max_element(std::begin(tradeAdjTimeList), std::end(tradeAdjTimeList)) << '\n';
-    std::cout << "Tick. Longest. adj. time: " << *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList)) << '\n';
+    std::cout << "Trade. Longest. adj. time: " << *max_element(std::begin(tradeAdjTimeList), std::end(tradeAdjTimeList))
+              << '\n';
+    std::cout << "Tick. Longest. adj. time: " << *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList))
+              << '\n';
 
     std::cout << "Average bid-ask spread: " << average(bidAskSpreadList) << '\n';
     std::cout << "Median bid-ask spread: " << median(bidAskSpreadList) << '\n';
 
-//    for (auto &trade: tradeList) {
-//        std::vector<int>::iterator it;
-//        it = std::unique(myvector.begin(), myvector.end());
-//        myvector.resize(std::distance(myvector.begin(), it));
-//    }
+    std::unordered_map<int, int> freq;
+    for (auto &i: tradePriceVolumeList) {
+        freq[i]++;
+    }
+    for (const auto &elem: freq) {
+        std::cout << elem.first << " " << elem.second << "\n";
+    }
 }
