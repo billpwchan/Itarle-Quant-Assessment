@@ -25,10 +25,10 @@ float median(std::vector<T> &v) {
     return v[n];
 }
 
-std::multimap<int, char, std::greater<>> invert(std::map<char, int> mymap) {
-    std::multimap<int, char, std::greater<>> multiMap;
+std::multimap<int, std::string, std::greater<>> invert(std::map<std::string, int> mymap) {
+    std::multimap<int, std::string, std::greater<>> multiMap;
 
-    std::map<char, int>::iterator it;
+    std::map<std::string, int>::iterator it;
     for (it = mymap.begin(); it != mymap.end(); it++) {
         multiMap.insert(std::make_pair(it->second, it->first));
     }
@@ -46,7 +46,7 @@ int main() {
     std::map<std::string, std::vector<float>> tradeTimeMap;
     std::map<std::string, std::vector<float>> tickTimeMap;
     // For Round Number Effects. A Vector of Trade Prices & Volumes in Strings
-    std::vector<char> tradePriceVolumeList;
+    std::vector<std::string> tradePriceVolumeList;
     // A Vector of Bid Ask Spread
     std::vector<float> bidAskSpreadList;
     for (csv::CSVRow &row: reader) {
@@ -56,8 +56,10 @@ int main() {
             if (std::stoi(tempTrade->getUpdateType()) == trade::updateTypeEnum::TRADE) {
                 tradeList.push_back(*tempTrade);
                 tradeTimeMap[tempTrade->getDate()].push_back(std::stof(tempTrade->getTimePastMidnight()));
-                tradePriceVolumeList.push_back(tempTrade->getTradePrice().back());
-                tradePriceVolumeList.push_back(tempTrade->getTradeVolume().back());
+                tradePriceVolumeList.push_back(
+                        tempTrade->getTradePrice().substr(tempTrade->getTradePrice().length() - 1));
+                tradePriceVolumeList.push_back(
+                        tempTrade->getTradeVolume().substr(tempTrade->getTradeVolume().length() - 1));
                 bidAskSpreadList.push_back(
                         abs(std::stof(tempTrade->getAskPrice()) - std::stof(tempTrade->getBidPrice())));
             } else if (std::stoi(tempTrade->getUpdateType()) == trade::updateTypeEnum::CHANGEBID or
@@ -125,19 +127,20 @@ int main() {
     std::cout << questionTable;
 
     // Round Number Effect
-    std::map<char, int> freq;
+    std::map<std::string, int> freq;
     for (const auto &i: tradePriceVolumeList) {
         freq[i]++;
     }
-    auto freqDesc = invert(freq);
     const std::size_t sumFreq = std::accumulate(std::begin(freq), std::end(freq), 0,
                                                 [](const std::size_t previous, const auto &element) {
-                                                    return previous + element.first;
+                                                    return previous + element.second;
                                                 });
+    auto freqDesc = invert(freq);
     ConsoleTable roundNumberTable(1, 1, samilton::Alignment::centre);
+    questionTable.addRow(std::vector<std::string>{"Last Digit", "Percentage of Freq"});
     for (const auto &elem: freqDesc) {
-        roundNumberTable.addRow(std::vector<std::string>{std::to_string(elem.second),
-                                                         std::to_string(100.0 * elem.first / sumFreq)});
+        roundNumberTable.addRow(std::vector<std::string>{elem.second,
+                                                         std::to_string(100.0 * elem.first / sumFreq) + "%"});
     }
     std::cout << roundNumberTable;
 }
