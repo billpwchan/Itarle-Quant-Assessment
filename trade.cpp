@@ -4,15 +4,15 @@ trade::trade() {}
 
 trade::trade(csv::CSVRow &row) {
     this->identifier = row[0].get<>();
-    this->bidPrice = std::stof(row[2].get<>());
-    this->askPrice = std::stof(row[3].get<>());
-    this->tradePrice = std::stof(row[4].get<>());
-    this->bidVolume = std::stol(row[5].get<>());
-    this->askVolume = std::stol(row[6].get<>());
-    this->tradeVolume = std::stol(row[7].get<>());
-    this->updateType = std::stoi(row[8].get<>());
+    this->bidPrice = row[2].get<>();
+    this->askPrice = row[3].get<>();
+    this->tradePrice = row[4].get<>();
+    this->bidVolume = row[5].get<>();
+    this->askVolume = row[6].get<>();
+    this->tradeVolume = row[7].get<>();
+    this->updateType = row[8].get<>();
     this->date = row[10].get<>();
-    this->timePastMidnight = std::stoi(row[11].get<>());
+    this->timePastMidnight = row[11].get<>();
     this->conditionCode = row[14].get<>();
 }
 
@@ -24,59 +24,59 @@ void trade::setIdentifier(const std::string &identifier) {
     trade::identifier = identifier;
 }
 
-float trade::getBidPrice() const {
+const std::string &trade::getBidPrice() const {
     return bidPrice;
 }
 
-void trade::setBidPrice(float bidPrice) {
+void trade::setBidPrice(const std::string &bidPrice) {
     trade::bidPrice = bidPrice;
 }
 
-float trade::getAskPrice() const {
+const std::string &trade::getAskPrice() const {
     return askPrice;
 }
 
-void trade::setAskPrice(float askPrice) {
+void trade::setAskPrice(const std::string &askPrice) {
     trade::askPrice = askPrice;
 }
 
-float trade::getTradePrice() const {
+const std::string &trade::getTradePrice() const {
     return tradePrice;
 }
 
-void trade::setTradePrice(float tradePrice) {
+void trade::setTradePrice(const std::string &tradePrice) {
     trade::tradePrice = tradePrice;
 }
 
-long trade::getBidVolume() const {
+const std::string &trade::getBidVolume() const {
     return bidVolume;
 }
 
-void trade::setBidVolume(long bidVolume) {
+void trade::setBidVolume(const std::string &bidVolume) {
     trade::bidVolume = bidVolume;
 }
 
-long trade::getAskVolume() const {
+const std::string &trade::getAskVolume() const {
     return askVolume;
 }
 
-void trade::setAskVolume(long askVolume) {
+void trade::setAskVolume(const std::string &askVolume) {
     trade::askVolume = askVolume;
 }
 
-long trade::getTradeVolume() const {
+const std::string &trade::getTradeVolume() const {
     return tradeVolume;
 }
 
-void trade::setTradeVolume(long tradeVolume) {
+void trade::setTradeVolume(const std::string &tradeVolume) {
     trade::tradeVolume = tradeVolume;
 }
 
-int trade::getUpdateType() const {
+const std::string &trade::getUpdateType() const {
     return updateType;
 }
 
-void trade::setUpdateType(int updateType) {
+void trade::setUpdateType(const std::string &updateType) {
     trade::updateType = updateType;
 }
 
@@ -88,11 +88,11 @@ void trade::setDate(const std::string &date) {
     trade::date = date;
 }
 
-float trade::getTimePastMidnight() const {
+const std::string &trade::getTimePastMidnight() const {
     return timePastMidnight;
 }
 
-void trade::setTimePastMidnight(float timePastMidnight) {
+void trade::setTimePastMidnight(const std::string &timePastMidnight) {
     trade::timePastMidnight = timePastMidnight;
 }
 

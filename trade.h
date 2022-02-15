@@ -12,59 +12,60 @@ public:
     };
 private:
     std::string identifier;
-    float bidPrice;
-    float askPrice;
-    float tradePrice;
-    long bidVolume;
-    long askVolume;
-    long tradeVolume;
-    int updateType;
+    std::string bidPrice;
+    std::string askPrice;
+    std::string tradePrice;
+    std::string bidVolume;
+    std::string askVolume;
+    std::string tradeVolume;
+    std::string updateType;
     std::string date;
-    float timePastMidnight;
+    std::string timePastMidnight;
     std::string conditionCode;
 public:
     const std::string &getIdentifier() const;
 
     void setIdentifier(const std::string &identifier);
 
-    float getBidPrice() const;
+    const std::string &getBidPrice() const;
 
-    void setBidPrice(float bidPrice);
+    void setBidPrice(const std::string &bidPrice);
 
-    float getAskPrice() const;
+    const std::string &getAskPrice() const;
 
-    void setAskPrice(float askPrice);
+    void setAskPrice(const std::string &askPrice);
 
-    float getTradePrice() const;
+    const std::string &getTradePrice() const;
 
-    void setTradePrice(float tradePrice);
+    void setTradePrice(const std::string &tradePrice);
 
-    long getBidVolume() const;
+    const std::string &getBidVolume() const;
 
-    void setBidVolume(long bidVolume);
+    void setBidVolume(const std::string &bidVolume);
 
-    long getAskVolume() const;
+    const std::string &getAskVolume() const;
 
-    void setAskVolume(long askVolume);
+    void setAskVolume(const std::string &askVolume);
 
-    long getTradeVolume() const;
+    const std::string &getTradeVolume() const;
 
-    void setTradeVolume(long tradeVolume);
+    void setTradeVolume(const std::string &tradeVolume);
 
-    int getUpdateType() const;
+    const std::string &getUpdateType() const;
 
-    void setUpdateType(int updateType);
+    void setUpdateType(const std::string &updateType);
 
     const std::string &getDate() const;
 
     void setDate(const std::string &date);
 
-    float getTimePastMidnight() const;
+    const std::string & getTimePastMidnight() const;
 
-    void setTimePastMidnight(float timePastMidnight);
+    void setTimePastMidnight(const std::string &timePastMidnight);
 
     const std::string &getConditionCode() const;
 
     void setConditionCode(const std::string &conditionCode);
+
 };
 

@@ -5,13 +5,15 @@
 #include <tuple>
 #include <map>
 #include "trade.h"
+#include "include/CppConsoleTable.hpp"
+
+using ConsoleTable = samilton::ConsoleTable;
 
 template<typename T>
 double average(std::vector<T> const &v) {
     if (v.empty()) {
         return 0;
     }
-
     return std::reduce(v.begin(), v.end(), 0.0) / v.size();
 }
 
@@ -41,16 +43,17 @@ int main() {
         // Only include XT / Empty Condition Code
         if (row[14].get<>() == "XT" or row[14].get<>().empty()) {
             auto *tempTrade = new trade(row);
-            if (tempTrade->getUpdateType() == trade::updateTypeEnum::TRADE) {
+            if (std::stoi(tempTrade->getUpdateType()) == trade::updateTypeEnum::TRADE) {
                 tradeList.push_back(*tempTrade);
-                tradeTimeMap[tempTrade->getDate()].push_back(tempTrade->getTimePastMidnight());
-                tradePriceVolumeList.push_back(std::to_string(tempTrade->getTradePrice()).back());
-                tradePriceVolumeList.push_back(std::to_string(tempTrade->getTradeVolume()).back());
-                bidAskSpreadList.push_back(tempTrade->getAskPrice() - tempTrade->getBidPrice());
-            } else if (tempTrade->getUpdateType() == trade::updateTypeEnum::CHANGEBID or
-                       tempTrade->getUpdateType() == trade::updateTypeEnum::CHANGEASK) {
+                tradeTimeMap[tempTrade->getDate()].push_back(std::stof(tempTrade->getTimePastMidnight()));
+                tradePriceVolumeList.push_back(tempTrade->getTradePrice().back());
+                tradePriceVolumeList.push_back(tempTrade->getTradeVolume().back());
+                bidAskSpreadList.push_back(
+                        abs(std::stof(tempTrade->getAskPrice()) - std::stof(tempTrade->getBidPrice())));
+            } else if (std::stoi(tempTrade->getUpdateType()) == trade::updateTypeEnum::CHANGEBID or
+                       std::stoi(tempTrade->getUpdateType()) == trade::updateTypeEnum::CHANGEASK) {
                 tickList.push_back(*tempTrade);
-                tickTimeMap[tempTrade->getDate()].push_back(tempTrade->getTimePastMidnight());
+                tickTimeMap[tempTrade->getDate()].push_back(std::stof(tempTrade->getTimePastMidnight()));
             }
         }
     }
@@ -80,19 +83,39 @@ int main() {
     std::cout << "Trade. median. adj. time: " << median(tradeAdjTimeList) << '\n';
     std::cout << "Tick. median. adj. time: " << median(tickAdjTimeList) << '\n';
 
-    std::cout << "Trade. Longest. adj. time: " << *max_element(std::begin(tradeAdjTimeList), std::end(tradeAdjTimeList))
+    std::cout << "Longest time between trades: "
+              << *max_element(std::begin(tradeAdjTimeList), std::end(tradeAdjTimeList))
               << '\n';
-    std::cout << "Tick. Longest. adj. time: " << *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList))
+    std::cout << "Longest time between tick changes: "
+              << *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList))
               << '\n';
 
-    std::cout << "Average bid-ask spread: " << average(bidAskSpreadList) << '\n';
+    std::cout << "Mean bid-ask spread: " << average(bidAskSpreadList) << '\n';
     std::cout << "Median bid-ask spread: " << median(bidAskSpreadList) << '\n';
 
-    std::unordered_map<int, int> freq;
+    std::unordered_map<char, int> freq;
     for (auto &i: tradePriceVolumeList) {
         freq[i]++;
     }
     for (const auto &elem: freq) {
         std::cout << elem.first << " " << elem.second << "\n";
     }
+
+    ConsoleTable table(1, 1, samilton::Alignment::centre);
+    table.addColumn({"Question", "Answer"});
+    table.addRow(std::vector<std::string>{"Mean time between trades", std::to_string(average(tradeAdjTimeList))});
+    table.addRow(std::vector<std::string>{"Median time between trades", std::to_string(median(tradeAdjTimeList))});
+    table.addRow(std::vector<std::string>{"Mean time between tick changes", std::to_string(average(tickAdjTimeList))});
+    table.addRow(std::vector<std::string>{"Median time between tick changes", std::to_string(median(tickAdjTimeList))});
+    table.addRow(std::vector<std::string>{"Longest time between trades", std::to_string(
+            *max_element(std::begin(tradeAdjTimeList), std::end(tradeAdjTimeList)))});
+    table.addRow(std::vector<std::string>{"Longest time between tick changes", std::to_string(
+            *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList)))});
+    table.addRow(std::vector<std::string>{"Mean bid-ask spread", std::to_string(average(bidAskSpreadList))});
+    table.addRow(std::vector<std::string>{"Median bid-ask spread", std::to_string(median(bidAskSpreadList))});
+
+    std::cout << table;
+
+//    table.addRow({"Mean time between tick changes", std::to_string(average(tickAdjTimeList))});
+
 }
