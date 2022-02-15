@@ -58,6 +58,8 @@ int main() {
         // Only include XT / Empty Condition Code
         if (row[14].get<>() == "XT" or row[14].get<>().empty()) {
             auto *tempTrade = new trade(row);
+            // Ensure Ask always greater or equal to Bid
+            if (std::stof(tempTrade->getAskPrice()) < std::stof(tempTrade->getBidPrice())) { continue; }
             if (std::stoi(tempTrade->getUpdateType()) == trade::updateTypeEnum::TRADE) {
                 tradeList.push_back(*tempTrade);
                 tradeTimeMap[tempTrade->getDate()].push_back(std::stof(tempTrade->getTimePastMidnight()));
@@ -66,7 +68,7 @@ int main() {
                 tradePriceVolumeList.push_back(
                         tempTrade->getTradeVolume().substr(tempTrade->getTradeVolume().length() - 1));
                 bidAskSpreadList.push_back(
-                        abs(std::stof(tempTrade->getAskPrice()) - std::stof(tempTrade->getBidPrice())));
+                        std::stof(tempTrade->getAskPrice()) - std::stof(tempTrade->getBidPrice()));
             } else if (std::stoi(tempTrade->getUpdateType()) == trade::updateTypeEnum::CHANGEBID or
                        std::stoi(tempTrade->getUpdateType()) == trade::updateTypeEnum::CHANGEASK) {
                 tickList.push_back(*tempTrade);
@@ -126,7 +128,8 @@ int main() {
     roundNumberTable.addRow(std::vector<std::string>{"Last Digit", "Percentage of Freq", "Freq"});
     for (const auto &elem: freqDesc) {
         roundNumberTable.addRow(std::vector<std::string>{elem.second,
-                                                         std::to_string(100.0 * elem.first / sumFreq) + "%", std::to_string(elem.first)});
+                                                         std::to_string(100.0 * elem.first / sumFreq) + "%",
+                                                         std::to_string(elem.first)});
     }
     std::cout << roundNumberTable;
 }
