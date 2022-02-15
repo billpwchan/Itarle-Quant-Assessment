@@ -7,7 +7,7 @@
 #include "trade.h"
 #include "include/CppConsoleTable.hpp"
 
-
+#pragma execution_character_set( "utf-8" )
 using ConsoleTable = samilton::ConsoleTable;
 
 template<typename T>
@@ -37,6 +37,10 @@ std::multimap<int, std::string, std::greater<>> invert(std::map<std::string, int
 }
 
 int main() {
+    // Setup Console Encoidng
+    SetConsoleOutputCP(CP_UTF8);
+    setvbuf(stdout, nullptr, _IOFBF, 1000);
+
     csv::CSVReader reader("../data/scandi.csv");
     // A vector of Trade Objections that can be used for other applications.
     // Due to time complexity, we directly use the following map and vectors instead of iterating the
@@ -70,8 +74,6 @@ int main() {
             }
         }
     }
-    std::cout << "Trade. size: " << tradeList.size() << '\n';
-    std::cout << "Tick. size: " << tickList.size() << '\n';
 
     std::vector<float> tradeAdjTimeList;
     std::vector<float> tickAdjTimeList;
@@ -92,7 +94,7 @@ int main() {
 
 
     // General Questions
-    ConsoleTable questionTable(1, 1, samilton::Alignment::centre);
+    ConsoleTable questionTable(1, 1, samilton::Alignment::left);
     questionTable.addRow(std::vector<std::string>{"Question", "Answer"});
     questionTable.addRow(
             std::vector<std::string>{"Mean time between trades", std::to_string(average(tradeAdjTimeList))});
@@ -108,8 +110,6 @@ int main() {
             *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList)))});
     questionTable.addRow(std::vector<std::string>{"Mean bid-ask spread", std::to_string(average(bidAskSpreadList))});
     questionTable.addRow(std::vector<std::string>{"Median bid-ask spread", std::to_string(median(bidAskSpreadList))});
-    SetConsoleOutputCP(CP_UTF8);
-    setvbuf(stdout, nullptr, _IOFBF, 1000);
     std::cout << questionTable;
 
     // Round Number Effect
@@ -122,11 +122,11 @@ int main() {
                                                     return previous + element.second;
                                                 });
     auto freqDesc = invert(freq);
-    ConsoleTable roundNumberTable(1, 1, samilton::Alignment::centre);
-    questionTable.addRow(std::vector<std::string>{"Last Digit", "Percentage of Freq"});
+    ConsoleTable roundNumberTable(1, 1, samilton::Alignment::left);
+    roundNumberTable.addRow(std::vector<std::string>{"Last Digit", "Percentage of Freq", "Freq"});
     for (const auto &elem: freqDesc) {
         roundNumberTable.addRow(std::vector<std::string>{elem.second,
-                                                         std::to_string(100.0 * elem.first / sumFreq) + "%"});
+                                                         std::to_string(100.0 * elem.first / sumFreq) + "%", std::to_string(elem.first)});
     }
     std::cout << roundNumberTable;
 }
