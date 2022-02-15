@@ -25,6 +25,16 @@ float median(std::vector<T> &v) {
     return v[n];
 }
 
+std::multimap<int, char, std::greater<>> invert(std::map<char, int> mymap) {
+    std::multimap<int, char, std::greater<>> multiMap;
+
+    std::map<char, int>::iterator it;
+    for (it = mymap.begin(); it != mymap.end(); it++) {
+        multiMap.insert(std::make_pair(it->second, it->first));
+    }
+    return multiMap;
+}
+
 int main() {
     csv::CSVReader reader("../data/scandi.csv");
     // A vector of Trade Objections that can be used for other applications.
@@ -93,29 +103,41 @@ int main() {
     std::cout << "Mean bid-ask spread: " << average(bidAskSpreadList) << '\n';
     std::cout << "Median bid-ask spread: " << median(bidAskSpreadList) << '\n';
 
-    std::unordered_map<char, int> freq;
-    for (auto &i: tradePriceVolumeList) {
+    // General Questions
+    ConsoleTable questionTable(1, 1, samilton::Alignment::centre);
+    questionTable.addRow(std::vector<std::string>{"Question", "Answer"});
+    questionTable.addRow(
+            std::vector<std::string>{"Mean time between trades", std::to_string(average(tradeAdjTimeList))});
+    questionTable.addRow(
+            std::vector<std::string>{"Median time between trades", std::to_string(median(tradeAdjTimeList))});
+    questionTable.addRow(
+            std::vector<std::string>{"Mean time between tick changes", std::to_string(average(tickAdjTimeList))});
+    questionTable.addRow(
+            std::vector<std::string>{"Median time between tick changes", std::to_string(median(tickAdjTimeList))});
+    questionTable.addRow(std::vector<std::string>{"Longest time between trades", std::to_string(
+            *max_element(std::begin(tradeAdjTimeList), std::end(tradeAdjTimeList)))});
+    questionTable.addRow(std::vector<std::string>{"Longest time between tick changes", std::to_string(
+            *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList)))});
+    questionTable.addRow(std::vector<std::string>{"Mean bid-ask spread", std::to_string(average(bidAskSpreadList))});
+    questionTable.addRow(std::vector<std::string>{"Median bid-ask spread", std::to_string(median(bidAskSpreadList))});
+    SetConsoleOutputCP(CP_UTF8);
+    setvbuf(stdout, nullptr, _IOFBF, 1000);
+    std::cout << questionTable;
+
+    // Round Number Effect
+    std::map<char, int> freq;
+    for (const auto &i: tradePriceVolumeList) {
         freq[i]++;
     }
-    for (const auto &elem: freq) {
-        std::cout << elem.first << " " << elem.second << "\n";
+    auto freqDesc = invert(freq);
+    const std::size_t sumFreq = std::accumulate(std::begin(freq), std::end(freq), 0,
+                                                [](const std::size_t previous, const auto &element) {
+                                                    return previous + element.first;
+                                                });
+    ConsoleTable roundNumberTable(1, 1, samilton::Alignment::centre);
+    for (const auto &elem: freqDesc) {
+        roundNumberTable.addRow(std::vector<std::string>{std::to_string(elem.second),
+                                                         std::to_string(100.0 * elem.first / sumFreq)});
     }
-
-    ConsoleTable table(1, 1, samilton::Alignment::centre);
-    table.addColumn({"Question", "Answer"});
-    table.addRow(std::vector<std::string>{"Mean time between trades", std::to_string(average(tradeAdjTimeList))});
-    table.addRow(std::vector<std::string>{"Median time between trades", std::to_string(median(tradeAdjTimeList))});
-    table.addRow(std::vector<std::string>{"Mean time between tick changes", std::to_string(average(tickAdjTimeList))});
-    table.addRow(std::vector<std::string>{"Median time between tick changes", std::to_string(median(tickAdjTimeList))});
-    table.addRow(std::vector<std::string>{"Longest time between trades", std::to_string(
-            *max_element(std::begin(tradeAdjTimeList), std::end(tradeAdjTimeList)))});
-    table.addRow(std::vector<std::string>{"Longest time between tick changes", std::to_string(
-            *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList)))});
-    table.addRow(std::vector<std::string>{"Mean bid-ask spread", std::to_string(average(bidAskSpreadList))});
-    table.addRow(std::vector<std::string>{"Median bid-ask spread", std::to_string(median(bidAskSpreadList))});
-
-    std::cout << table;
-
-//    table.addRow({"Mean time between tick changes", std::to_string(average(tickAdjTimeList))});
-
+    std::cout << roundNumberTable;
 }
