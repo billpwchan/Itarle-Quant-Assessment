@@ -93,7 +93,9 @@ SOFTWARE.
 #define MIO_PAGE_HEADER
 
 #ifdef _WIN32
+
 # include <windows.h>
+
 #else
 # include <unistd.h>
 #endif
@@ -104,11 +106,10 @@ namespace mio {
  * This is used by `basic_mmap` to determine whether to create a read-only or
  * a read-write memory mapping.
  */
-enum class access_mode
-{
-    read,
-    write
-};
+    enum class access_mode {
+        read,
+        write
+    };
 
 /**
  * Determines the operating system's page allocation granularity.
@@ -117,32 +118,29 @@ enum class access_mode
  * to determine the page size, caches the value, and returns it. Any subsequent call to
  * this function serves the cached value, so no further syscalls are made.
  */
-inline size_t page_size()
-{
-    static const size_t page_size = []
-    {
+    inline size_t page_size() {
+        static const size_t page_size = [] {
 #ifdef _WIN32
-        SYSTEM_INFO SystemInfo;
-        GetSystemInfo(&SystemInfo);
-        return SystemInfo.dwAllocationGranularity;
+            SYSTEM_INFO SystemInfo;
+            GetSystemInfo(&SystemInfo);
+            return SystemInfo.dwAllocationGranularity;
 #else
-        return sysconf(_SC_PAGE_SIZE);
+            return sysconf(_SC_PAGE_SIZE);
 #endif
-    }();
-    return page_size;
-}
+        }();
+        return page_size;
+    }
 
 /**
  * Alligns `offset` to the operating's system page size such that it subtracts the
  * difference until the nearest page boundary before `offset`, or does nothing if
  * `offset` is already page aligned.
  */
-inline size_t make_offset_page_aligned(size_t offset) noexcept
-{
-    const size_t page_size_ = page_size();
-    // Use integer division to round down to the nearest page alignment.
-    return offset / page_size_ * page_size_;
-}
+    inline size_t make_offset_page_aligned(size_t offset) noexcept {
+        const size_t page_size_ = page_size();
+        // Use integer division to round down to the nearest page alignment.
+        return offset / page_size_ * page_size_;
+    }
 
 } // namespace mio
 
@@ -158,7 +156,9 @@ inline size_t make_offset_page_aligned(size_t offset) noexcept
 # ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
 # endif // WIN32_LEAN_AND_MEAN
+
 # include <windows.h>
+
 #else // ifdef _WIN32
 # define INVALID_HANDLE_VALUE -1
 #endif // ifdef _WIN32
@@ -167,409 +167,424 @@ namespace mio {
 
 // This value may be provided as the `length` parameter to the constructor or
 // `map`, in which case a memory mapping of the entire file is created.
-enum { map_entire_file = 0 };
+    enum {
+        map_entire_file = 0
+    };
 
 #ifdef _WIN32
-using file_handle_type = HANDLE;
+    using file_handle_type = HANDLE;
 #else
-using file_handle_type = int;
+    using file_handle_type = int;
 #endif
 
 // This value represents an invalid file handle type. This can be used to
 // determine whether `basic_mmap::file_handle` is valid, for example.
-const static file_handle_type invalid_handle = INVALID_HANDLE_VALUE;
+    const static file_handle_type invalid_handle = INVALID_HANDLE_VALUE;
 
-template<access_mode AccessMode, typename ByteT>
-struct basic_mmap
-{
-    using value_type = ByteT;
-    using size_type = size_t;
-    using reference = value_type&;
-    using const_reference = const value_type&;
-    using pointer = value_type*;
-    using const_pointer = const value_type*;
-    using difference_type = std::ptrdiff_t;
-    using iterator = pointer;
-    using const_iterator = const_pointer;
-    using reverse_iterator = std::reverse_iterator<iterator>;
-    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
-    using iterator_category = std::random_access_iterator_tag;
-    using handle_type = file_handle_type;
+    template<access_mode AccessMode, typename ByteT>
+    struct basic_mmap {
+        using value_type = ByteT;
+        using size_type = size_t;
+        using reference = value_type &;
+        using const_reference = const value_type &;
+        using pointer = value_type *;
+        using const_pointer = const value_type *;
+        using difference_type = std::ptrdiff_t;
+        using iterator = pointer;
+        using const_iterator = const_pointer;
+        using reverse_iterator = std::reverse_iterator<iterator>;
+        using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+        using iterator_category = std::random_access_iterator_tag;
+        using handle_type = file_handle_type;
 
-    static_assert(sizeof(ByteT) == sizeof(char), "ByteT must be the same size as char.");
+        static_assert(sizeof(ByteT) == sizeof(char), "ByteT must be the same size as char.");
 
-private:
-    // Points to the first requested byte, and not to the actual start of the mapping.
-    pointer data_ = nullptr;
+    private:
+        // Points to the first requested byte, and not to the actual start of the mapping.
+        pointer data_ = nullptr;
 
-    // Length--in bytes--requested by user (which may not be the length of the
-    // full mapping) and the length of the full mapping.
-    size_type length_ = 0;
-    size_type mapped_length_ = 0;
+        // Length--in bytes--requested by user (which may not be the length of the
+        // full mapping) and the length of the full mapping.
+        size_type length_ = 0;
+        size_type mapped_length_ = 0;
 
-    // Letting user map a file using both an existing file handle and a path
-    // introcudes some complexity (see `is_handle_internal_`).
-    // On POSIX, we only need a file handle to create a mapping, while on
-    // Windows systems the file handle is necessary to retrieve a file mapping
-    // handle, but any subsequent operations on the mapped region must be done
-    // through the latter.
-    handle_type file_handle_ = INVALID_HANDLE_VALUE;
+        // Letting user map a file using both an existing file handle and a path
+        // introcudes some complexity (see `is_handle_internal_`).
+        // On POSIX, we only need a file handle to create a mapping, while on
+        // Windows systems the file handle is necessary to retrieve a file mapping
+        // handle, but any subsequent operations on the mapped region must be done
+        // through the latter.
+        handle_type file_handle_ = INVALID_HANDLE_VALUE;
 #ifdef _WIN32
-    handle_type file_mapping_handle_ = INVALID_HANDLE_VALUE;
+        handle_type file_mapping_handle_ = INVALID_HANDLE_VALUE;
 #endif
 
-    // Letting user map a file using both an existing file handle and a path
-    // introcudes some complexity in that we must not close the file handle if
-    // user provided it, but we must close it if we obtained it using the
-    // provided path. For this reason, this flag is used to determine when to
-    // close `file_handle_`.
-    bool is_handle_internal_;
+        // Letting user map a file using both an existing file handle and a path
+        // introcudes some complexity in that we must not close the file handle if
+        // user provided it, but we must close it if we obtained it using the
+        // provided path. For this reason, this flag is used to determine when to
+        // close `file_handle_`.
+        bool is_handle_internal_;
 
-public:
-    /**
-     * The default constructed mmap object is in a non-mapped state, that is,
-     * any operation that attempts to access nonexistent underlying data will
-     * result in undefined behaviour/segmentation faults.
-     */
-    basic_mmap() = default;
+    public:
+        /**
+         * The default constructed mmap object is in a non-mapped state, that is,
+         * any operation that attempts to access nonexistent underlying data will
+         * result in undefined behaviour/segmentation faults.
+         */
+        basic_mmap() = default;
 
 #ifdef __cpp_exceptions
-    /**
-     * The same as invoking the `map` function, except any error that may occur
-     * while establishing the mapping is wrapped in a `std::system_error` and is
-     * thrown.
-     */
-    template<typename String>
-    basic_mmap(const String& path, const size_type offset = 0, const size_type length = map_entire_file)
-    {
-        std::error_code error;
-        map(path, offset, length, error);
-        if(error) { throw std::system_error(error); }
-    }
 
-    /**
-     * The same as invoking the `map` function, except any error that may occur
-     * while establishing the mapping is wrapped in a `std::system_error` and is
-     * thrown.
-     */
-    basic_mmap(const handle_type handle, const size_type offset = 0, const size_type length = map_entire_file)
-    {
-        std::error_code error;
-        map(handle, offset, length, error);
-        if(error) { throw std::system_error(error); }
-    }
+        /**
+         * The same as invoking the `map` function, except any error that may occur
+         * while establishing the mapping is wrapped in a `std::system_error` and is
+         * thrown.
+         */
+        template<typename String>
+        basic_mmap(const String &path, const size_type offset = 0, const size_type length = map_entire_file) {
+            std::error_code error;
+            map(path, offset, length, error);
+            if (error) { throw std::system_error(error); }
+        }
+
+        /**
+         * The same as invoking the `map` function, except any error that may occur
+         * while establishing the mapping is wrapped in a `std::system_error` and is
+         * thrown.
+         */
+        basic_mmap(const handle_type handle, const size_type offset = 0, const size_type length = map_entire_file) {
+            std::error_code error;
+            map(handle, offset, length, error);
+            if (error) { throw std::system_error(error); }
+        }
+
 #endif // __cpp_exceptions
 
-    /**
-     * `basic_mmap` has single-ownership semantics, so transferring ownership
-     * may only be accomplished by moving the object.
-     */
-    basic_mmap(const basic_mmap&) = delete;
-    basic_mmap(basic_mmap&&);
-    basic_mmap& operator=(const basic_mmap&) = delete;
-    basic_mmap& operator=(basic_mmap&&);
+        /**
+         * `basic_mmap` has single-ownership semantics, so transferring ownership
+         * may only be accomplished by moving the object.
+         */
+        basic_mmap(const basic_mmap &) = delete;
 
-    /**
-     * If this is a read-write mapping, the destructor invokes sync. Regardless
-     * of the access mode, unmap is invoked as a final step.
-     */
-    ~basic_mmap();
+        basic_mmap(basic_mmap &&);
 
-    /**
-     * On UNIX systems 'file_handle' and 'mapping_handle' are the same. On Windows,
-     * however, a mapped region of a file gets its own handle, which is returned by
-     * 'mapping_handle'.
-     */
-    handle_type file_handle() const noexcept { return file_handle_; }
-    handle_type mapping_handle() const noexcept;
+        basic_mmap &operator=(const basic_mmap &) = delete;
 
-    /** Returns whether a valid memory mapping has been created. */
-    bool is_open() const noexcept { return file_handle_ != invalid_handle; }
+        basic_mmap &operator=(basic_mmap &&);
 
-    /**
-     * Returns true if no mapping was established, that is, conceptually the
-     * same as though the length that was mapped was 0. This function is
-     * provided so that this class has Container semantics.
-     */
-    bool empty() const noexcept { return length() == 0; }
+        /**
+         * If this is a read-write mapping, the destructor invokes sync. Regardless
+         * of the access mode, unmap is invoked as a final step.
+         */
+        ~basic_mmap();
 
-    /** Returns true if a mapping was established. */
-    bool is_mapped() const noexcept;
+        /**
+         * On UNIX systems 'file_handle' and 'mapping_handle' are the same. On Windows,
+         * however, a mapped region of a file gets its own handle, which is returned by
+         * 'mapping_handle'.
+         */
+        handle_type file_handle() const noexcept { return file_handle_; }
 
-    /**
-     * `size` and `length` both return the logical length, i.e. the number of bytes
-     * user requested to be mapped, while `mapped_length` returns the actual number of
-     * bytes that were mapped which is a multiple of the underlying operating system's
-     * page allocation granularity.
-     */
-    size_type size() const noexcept { return length(); }
-    size_type length() const noexcept { return length_; }
-    size_type mapped_length() const noexcept { return mapped_length_; }
+        handle_type mapping_handle() const noexcept;
 
-    /** Returns the offset relative to the start of the mapping. */
-    size_type mapping_offset() const noexcept
-    {
-        return mapped_length_ - length_;
-    }
+        /** Returns whether a valid memory mapping has been created. */
+        bool is_open() const noexcept { return file_handle_ != invalid_handle; }
 
-    /**
-     * Returns a pointer to the first requested byte, or `nullptr` if no memory mapping
-     * exists.
-     */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > pointer data() noexcept { return data_; }
-    const_pointer data() const noexcept { return data_; }
+        /**
+         * Returns true if no mapping was established, that is, conceptually the
+         * same as though the length that was mapped was 0. This function is
+         * provided so that this class has Container semantics.
+         */
+        bool empty() const noexcept { return length() == 0; }
 
-    /**
-     * Returns an iterator to the first requested byte, if a valid memory mapping
-     * exists, otherwise this function call is undefined behaviour.
-     */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > iterator begin() noexcept { return data(); }
-    const_iterator begin() const noexcept { return data(); }
-    const_iterator cbegin() const noexcept { return data(); }
+        /** Returns true if a mapping was established. */
+        bool is_mapped() const noexcept;
 
-    /**
-     * Returns an iterator one past the last requested byte, if a valid memory mapping
-     * exists, otherwise this function call is undefined behaviour.
-     */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > iterator end() noexcept { return data() + length(); }
-    const_iterator end() const noexcept { return data() + length(); }
-    const_iterator cend() const noexcept { return data() + length(); }
+        /**
+         * `size` and `length` both return the logical length, i.e. the number of bytes
+         * user requested to be mapped, while `mapped_length` returns the actual number of
+         * bytes that were mapped which is a multiple of the underlying operating system's
+         * page allocation granularity.
+         */
+        size_type size() const noexcept { return length(); }
 
-    /**
-     * Returns a reverse iterator to the last memory mapped byte, if a valid
-     * memory mapping exists, otherwise this function call is undefined
-     * behaviour.
-     */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
-    const_reverse_iterator rbegin() const noexcept
-    { return const_reverse_iterator(end()); }
-    const_reverse_iterator crbegin() const noexcept
-    { return const_reverse_iterator(end()); }
+        size_type length() const noexcept { return length_; }
 
-    /**
-     * Returns a reverse iterator past the first mapped byte, if a valid memory
-     * mapping exists, otherwise this function call is undefined behaviour.
-     */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
-    const_reverse_iterator rend() const noexcept
-    { return const_reverse_iterator(begin()); }
-    const_reverse_iterator crend() const noexcept
-    { return const_reverse_iterator(begin()); }
+        size_type mapped_length() const noexcept { return mapped_length_; }
 
-    /**
-     * Returns a reference to the `i`th byte from the first requested byte (as returned
-     * by `data`). If this is invoked when no valid memory mapping has been created
-     * prior to this call, undefined behaviour ensues.
-     */
-    reference operator[](const size_type i) noexcept { return data_[i]; }
-    const_reference operator[](const size_type i) const noexcept { return data_[i]; }
+        /** Returns the offset relative to the start of the mapping. */
+        size_type mapping_offset() const noexcept {
+            return mapped_length_ - length_;
+        }
 
-    /**
-     * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
-     * reason is reported via `error` and the object remains in a state as if this
-     * function hadn't been called.
-     *
-     * `path`, which must be a path to an existing file, is used to retrieve a file
-     * handle (which is closed when the object destructs or `unmap` is called), which is
-     * then used to memory map the requested region. Upon failure, `error` is set to
-     * indicate the reason and the object remains in an unmapped state.
-     *
-     * `offset` is the number of bytes, relative to the start of the file, where the
-     * mapping should begin. When specifying it, there is no need to worry about
-     * providing a value that is aligned with the operating system's page allocation
-     * granularity. This is adjusted by the implementation such that the first requested
-     * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
-     * `offset` from the start of the file.
-     *
-     * `length` is the number of bytes to map. It may be `map_entire_file`, in which
-     * case a mapping of the entire file is created.
-     */
-    template<typename String>
-    void map(const String& path, const size_type offset,
-            const size_type length, std::error_code& error);
+        /**
+         * Returns a pointer to the first requested byte, or `nullptr` if no memory mapping
+         * exists.
+         */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        pointer data() noexcept { return data_; }
 
-    /**
-     * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
-     * reason is reported via `error` and the object remains in a state as if this
-     * function hadn't been called.
-     *
-     * `path`, which must be a path to an existing file, is used to retrieve a file
-     * handle (which is closed when the object destructs or `unmap` is called), which is
-     * then used to memory map the requested region. Upon failure, `error` is set to
-     * indicate the reason and the object remains in an unmapped state.
-     * 
-     * The entire file is mapped.
-     */
-    template<typename String>
-    void map(const String& path, std::error_code& error)
-    {
-        map(path, 0, map_entire_file, error);
-    }
+        const_pointer data() const noexcept { return data_; }
 
-    /**
-     * Establishes a memory mapping with AccessMode. If the mapping is
-     * unsuccesful, the reason is reported via `error` and the object remains in
-     * a state as if this function hadn't been called.
-     *
-     * `handle`, which must be a valid file handle, which is used to memory map the
-     * requested region. Upon failure, `error` is set to indicate the reason and the
-     * object remains in an unmapped state.
-     *
-     * `offset` is the number of bytes, relative to the start of the file, where the
-     * mapping should begin. When specifying it, there is no need to worry about
-     * providing a value that is aligned with the operating system's page allocation
-     * granularity. This is adjusted by the implementation such that the first requested
-     * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
-     * `offset` from the start of the file.
-     *
-     * `length` is the number of bytes to map. It may be `map_entire_file`, in which
-     * case a mapping of the entire file is created.
-     */
-    void map(const handle_type handle, const size_type offset,
-            const size_type length, std::error_code& error);
+        /**
+         * Returns an iterator to the first requested byte, if a valid memory mapping
+         * exists, otherwise this function call is undefined behaviour.
+         */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        iterator begin() noexcept { return data(); }
 
-    /**
-     * Establishes a memory mapping with AccessMode. If the mapping is
-     * unsuccesful, the reason is reported via `error` and the object remains in
-     * a state as if this function hadn't been called.
-     *
-     * `handle`, which must be a valid file handle, which is used to memory map the
-     * requested region. Upon failure, `error` is set to indicate the reason and the
-     * object remains in an unmapped state.
-     * 
-     * The entire file is mapped.
-     */
-    void map(const handle_type handle, std::error_code& error)
-    {
-        map(handle, 0, map_entire_file, error);
-    }
+        const_iterator begin() const noexcept { return data(); }
 
-    /**
-     * If a valid memory mapping has been created prior to this call, this call
-     * instructs the kernel to unmap the memory region and disassociate this object
-     * from the file.
-     *
-     * The file handle associated with the file that is mapped is only closed if the
-     * mapping was created using a file path. If, on the other hand, an existing
-     * file handle was used to create the mapping, the file handle is not closed.
-     */
-    void unmap();
+        const_iterator cbegin() const noexcept { return data(); }
 
-    void swap(basic_mmap& other);
+        /**
+         * Returns an iterator one past the last requested byte, if a valid memory mapping
+         * exists, otherwise this function call is undefined behaviour.
+         */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        iterator end() noexcept { return data() + length(); }
 
-    /** Flushes the memory mapped page to disk. Errors are reported via `error`. */
-    template<access_mode A = AccessMode>
-    typename std::enable_if<A == access_mode::write, void>::type
-    sync(std::error_code& error);
+        const_iterator end() const noexcept { return data() + length(); }
 
-    /**
-     * All operators compare the address of the first byte and size of the two mapped
-     * regions.
-     */
+        const_iterator cend() const noexcept { return data() + length(); }
 
-private:
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > pointer get_mapping_start() noexcept
-    {
-        return !data() ? nullptr : data() - mapping_offset();
-    }
+        /**
+         * Returns a reverse iterator to the last memory mapped byte, if a valid
+         * memory mapping exists, otherwise this function call is undefined
+         * behaviour.
+         */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        reverse_iterator rbegin() noexcept { return reverse_iterator(end()); }
 
-    const_pointer get_mapping_start() const noexcept
-    {
-        return !data() ? nullptr : data() - mapping_offset();
-    }
+        const_reverse_iterator rbegin() const noexcept { return const_reverse_iterator(end()); }
 
-    /**
-     * The destructor syncs changes to disk if `AccessMode` is `write`, but not
-     * if it's `read`, but since the destructor cannot be templated, we need to
-     * do SFINAE in a dedicated function, where one syncs and the other is a noop.
-     */
-    template<access_mode A = AccessMode>
-    typename std::enable_if<A == access_mode::write, void>::type
-    conditional_sync();
-    template<access_mode A = AccessMode>
-    typename std::enable_if<A == access_mode::read, void>::type conditional_sync();
-};
+        const_reverse_iterator crbegin() const noexcept { return const_reverse_iterator(end()); }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator==(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b);
+        /**
+         * Returns a reverse iterator past the first mapped byte, if a valid memory
+         * mapping exists, otherwise this function call is undefined behaviour.
+         */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        reverse_iterator rend() noexcept { return reverse_iterator(begin()); }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator!=(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b);
+        const_reverse_iterator rend() const noexcept { return const_reverse_iterator(begin()); }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator<(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b);
+        const_reverse_iterator crend() const noexcept { return const_reverse_iterator(begin()); }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator<=(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b);
+        /**
+         * Returns a reference to the `i`th byte from the first requested byte (as returned
+         * by `data`). If this is invoked when no valid memory mapping has been created
+         * prior to this call, undefined behaviour ensues.
+         */
+        reference operator[](const size_type i) noexcept { return data_[i]; }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator>(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b);
+        const_reference operator[](const size_type i) const noexcept { return data_[i]; }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator>=(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b);
+        /**
+         * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
+         * reason is reported via `error` and the object remains in a state as if this
+         * function hadn't been called.
+         *
+         * `path`, which must be a path to an existing file, is used to retrieve a file
+         * handle (which is closed when the object destructs or `unmap` is called), which is
+         * then used to memory map the requested region. Upon failure, `error` is set to
+         * indicate the reason and the object remains in an unmapped state.
+         *
+         * `offset` is the number of bytes, relative to the start of the file, where the
+         * mapping should begin. When specifying it, there is no need to worry about
+         * providing a value that is aligned with the operating system's page allocation
+         * granularity. This is adjusted by the implementation such that the first requested
+         * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
+         * `offset` from the start of the file.
+         *
+         * `length` is the number of bytes to map. It may be `map_entire_file`, in which
+         * case a mapping of the entire file is created.
+         */
+        template<typename String>
+        void map(const String &path, const size_type offset,
+                 const size_type length, std::error_code &error);
+
+        /**
+         * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
+         * reason is reported via `error` and the object remains in a state as if this
+         * function hadn't been called.
+         *
+         * `path`, which must be a path to an existing file, is used to retrieve a file
+         * handle (which is closed when the object destructs or `unmap` is called), which is
+         * then used to memory map the requested region. Upon failure, `error` is set to
+         * indicate the reason and the object remains in an unmapped state.
+         *
+         * The entire file is mapped.
+         */
+        template<typename String>
+        void map(const String &path, std::error_code &error) {
+            map(path, 0, map_entire_file, error);
+        }
+
+        /**
+         * Establishes a memory mapping with AccessMode. If the mapping is
+         * unsuccesful, the reason is reported via `error` and the object remains in
+         * a state as if this function hadn't been called.
+         *
+         * `handle`, which must be a valid file handle, which is used to memory map the
+         * requested region. Upon failure, `error` is set to indicate the reason and the
+         * object remains in an unmapped state.
+         *
+         * `offset` is the number of bytes, relative to the start of the file, where the
+         * mapping should begin. When specifying it, there is no need to worry about
+         * providing a value that is aligned with the operating system's page allocation
+         * granularity. This is adjusted by the implementation such that the first requested
+         * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
+         * `offset` from the start of the file.
+         *
+         * `length` is the number of bytes to map. It may be `map_entire_file`, in which
+         * case a mapping of the entire file is created.
+         */
+        void map(const handle_type handle, const size_type offset,
+                 const size_type length, std::error_code &error);
+
+        /**
+         * Establishes a memory mapping with AccessMode. If the mapping is
+         * unsuccesful, the reason is reported via `error` and the object remains in
+         * a state as if this function hadn't been called.
+         *
+         * `handle`, which must be a valid file handle, which is used to memory map the
+         * requested region. Upon failure, `error` is set to indicate the reason and the
+         * object remains in an unmapped state.
+         *
+         * The entire file is mapped.
+         */
+        void map(const handle_type handle, std::error_code &error) {
+            map(handle, 0, map_entire_file, error);
+        }
+
+        /**
+         * If a valid memory mapping has been created prior to this call, this call
+         * instructs the kernel to unmap the memory region and disassociate this object
+         * from the file.
+         *
+         * The file handle associated with the file that is mapped is only closed if the
+         * mapping was created using a file path. If, on the other hand, an existing
+         * file handle was used to create the mapping, the file handle is not closed.
+         */
+        void unmap();
+
+        void swap(basic_mmap &other);
+
+        /** Flushes the memory mapped page to disk. Errors are reported via `error`. */
+        template<access_mode A = AccessMode>
+        typename std::enable_if<A == access_mode::write, void>::type
+        sync(std::error_code &error);
+
+        /**
+         * All operators compare the address of the first byte and size of the two mapped
+         * regions.
+         */
+
+    private:
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        pointer get_mapping_start() noexcept {
+            return !data() ? nullptr : data() - mapping_offset();
+        }
+
+        const_pointer get_mapping_start() const noexcept {
+            return !data() ? nullptr : data() - mapping_offset();
+        }
+
+        /**
+         * The destructor syncs changes to disk if `AccessMode` is `write`, but not
+         * if it's `read`, but since the destructor cannot be templated, we need to
+         * do SFINAE in a dedicated function, where one syncs and the other is a noop.
+         */
+        template<access_mode A = AccessMode>
+        typename std::enable_if<A == access_mode::write, void>::type
+        conditional_sync();
+
+        template<access_mode A = AccessMode>
+        typename std::enable_if<A == access_mode::read, void>::type conditional_sync();
+    };
+
+    template<access_mode AccessMode, typename ByteT>
+    bool operator==(const basic_mmap<AccessMode, ByteT> &a,
+                    const basic_mmap<AccessMode, ByteT> &b);
+
+    template<access_mode AccessMode, typename ByteT>
+    bool operator!=(const basic_mmap<AccessMode, ByteT> &a,
+                    const basic_mmap<AccessMode, ByteT> &b);
+
+    template<access_mode AccessMode, typename ByteT>
+    bool operator<(const basic_mmap<AccessMode, ByteT> &a,
+                   const basic_mmap<AccessMode, ByteT> &b);
+
+    template<access_mode AccessMode, typename ByteT>
+    bool operator<=(const basic_mmap<AccessMode, ByteT> &a,
+                    const basic_mmap<AccessMode, ByteT> &b);
+
+    template<access_mode AccessMode, typename ByteT>
+    bool operator>(const basic_mmap<AccessMode, ByteT> &a,
+                   const basic_mmap<AccessMode, ByteT> &b);
+
+    template<access_mode AccessMode, typename ByteT>
+    bool operator>=(const basic_mmap<AccessMode, ByteT> &a,
+                    const basic_mmap<AccessMode, ByteT> &b);
 
 /**
  * This is the basis for all read-only mmap objects and should be preferred over
  * directly using `basic_mmap`.
  */
-template<typename ByteT>
-using basic_mmap_source = basic_mmap<access_mode::read, ByteT>;
+    template<typename ByteT>
+    using basic_mmap_source = basic_mmap<access_mode::read, ByteT>;
 
 /**
  * This is the basis for all read-write mmap objects and should be preferred over
  * directly using `basic_mmap`.
  */
-template<typename ByteT>
-using basic_mmap_sink = basic_mmap<access_mode::write, ByteT>;
+    template<typename ByteT>
+    using basic_mmap_sink = basic_mmap<access_mode::write, ByteT>;
 
 /**
  * These aliases cover the most common use cases, both representing a raw byte stream
  * (either with a char or an unsigned char/uint8_t).
  */
-using mmap_source = basic_mmap_source<char>;
-using ummap_source = basic_mmap_source<unsigned char>;
+    using mmap_source = basic_mmap_source<char>;
+    using ummap_source = basic_mmap_source<unsigned char>;
 
-using mmap_sink = basic_mmap_sink<char>;
-using ummap_sink = basic_mmap_sink<unsigned char>;
+    using mmap_sink = basic_mmap_sink<char>;
+    using ummap_sink = basic_mmap_sink<unsigned char>;
 
 /**
  * Convenience factory method that constructs a mapping for any `basic_mmap` or
  * `basic_mmap` type.
  */
-template<
-    typename MMap,
-    typename MappingToken
-> MMap make_mmap(const MappingToken& token,
-        int64_t offset, int64_t length, std::error_code& error)
-{
-    MMap mmap;
-    mmap.map(token, offset, length, error);
-    return mmap;
-}
+    template<
+            typename MMap,
+            typename MappingToken
+    >
+    MMap make_mmap(const MappingToken &token,
+                   int64_t offset, int64_t length, std::error_code &error) {
+        MMap mmap;
+        mmap.map(token, offset, length, error);
+        return mmap;
+    }
 
 /**
  * Convenience factory method.
@@ -578,18 +593,16 @@ template<
  * `std::filesystem::path`, `std::vector<char>`, or similar), or a
  * `mmap_source::handle_type`.
  */
-template<typename MappingToken>
-mmap_source make_mmap_source(const MappingToken& token, mmap_source::size_type offset,
-        mmap_source::size_type length, std::error_code& error)
-{
-    return make_mmap<mmap_source>(token, offset, length, error);
-}
+    template<typename MappingToken>
+    mmap_source make_mmap_source(const MappingToken &token, mmap_source::size_type offset,
+                                 mmap_source::size_type length, std::error_code &error) {
+        return make_mmap<mmap_source>(token, offset, length, error);
+    }
 
-template<typename MappingToken>
-mmap_source make_mmap_source(const MappingToken& token, std::error_code& error)
-{
-    return make_mmap_source(token, 0, map_entire_file, error);
-}
+    template<typename MappingToken>
+    mmap_source make_mmap_source(const MappingToken &token, std::error_code &error) {
+        return make_mmap_source(token, 0, map_entire_file, error);
+    }
 
 /**
  * Convenience factory method.
@@ -598,18 +611,16 @@ mmap_source make_mmap_source(const MappingToken& token, std::error_code& error)
  * `std::filesystem::path`, `std::vector<char>`, or similar), or a
  * `mmap_sink::handle_type`.
  */
-template<typename MappingToken>
-mmap_sink make_mmap_sink(const MappingToken& token, mmap_sink::size_type offset,
-        mmap_sink::size_type length, std::error_code& error)
-{
-    return make_mmap<mmap_sink>(token, offset, length, error);
-}
+    template<typename MappingToken>
+    mmap_sink make_mmap_sink(const MappingToken &token, mmap_sink::size_type offset,
+                             mmap_sink::size_type length, std::error_code &error) {
+        return make_mmap<mmap_sink>(token, offset, length, error);
+    }
 
-template<typename MappingToken>
-mmap_sink make_mmap_sink(const MappingToken& token, std::error_code& error)
-{
-    return make_mmap_sink(token, 0, map_entire_file, error);
-}
+    template<typename MappingToken>
+    mmap_sink make_mmap_sink(const MappingToken &token, std::error_code &error) {
+        return make_mmap_sink(token, 0, map_entire_file, error);
+    }
 
 } // namespace mio
 
@@ -668,147 +679,144 @@ mmap_sink make_mmap_sink(const MappingToken& token, std::error_code& error)
 #include <type_traits>
 
 namespace mio {
-namespace detail {
+    namespace detail {
 
-template<
-    typename S,
-    typename C = typename std::decay<S>::type,
-    typename = decltype(std::declval<C>().data()),
-    typename = typename std::enable_if<
-        std::is_same<typename C::value_type, char>::value
-#ifdef _WIN32
-        || std::is_same<typename C::value_type, wchar_t>::value
+        template<
+                typename S,
+                typename C = typename std::decay<S>::type,
+                typename = decltype(std::declval<C>().data()),
+                typename = typename std::enable_if<
+                        std::is_same<typename C::value_type, char>::value
+                        #ifdef _WIN32
+                        || std::is_same<typename C::value_type, wchar_t>::value
 #endif
-    >::type
-> struct char_type_helper {
-    using type = typename C::value_type;
-};
+                >::type
+        >
+        struct char_type_helper {
+            using type = typename C::value_type;
+        };
 
-template<class T>
-struct char_type {
-    using type = typename char_type_helper<T>::type;
-};
+        template<class T>
+        struct char_type {
+            using type = typename char_type_helper<T>::type;
+        };
 
 // TODO: can we avoid this brute force approach?
-template<>
-struct char_type<char*> {
-    using type = char;
-};
+        template<>
+        struct char_type<char *> {
+            using type = char;
+        };
 
-template<>
-struct char_type<const char*> {
-    using type = char;
-};
+        template<>
+        struct char_type<const char *> {
+            using type = char;
+        };
 
-template<size_t N>
-struct char_type<char[N]> {
-    using type = char;
-};
+        template<size_t N>
+        struct char_type<char[N]> {
+            using type = char;
+        };
 
-template<size_t N>
-struct char_type<const char[N]> {
-    using type = char;
-};
+        template<size_t N>
+        struct char_type<const char[N]> {
+            using type = char;
+        };
 
 #ifdef _WIN32
-template<>
-struct char_type<wchar_t*> {
-    using type = wchar_t;
-};
+        template<>
+        struct char_type<wchar_t *> {
+            using type = wchar_t;
+        };
 
-template<>
-struct char_type<const wchar_t*> {
-    using type = wchar_t;
-};
+        template<>
+        struct char_type<const wchar_t *> {
+            using type = wchar_t;
+        };
 
-template<size_t N>
-struct char_type<wchar_t[N]> {
-    using type = wchar_t;
-};
+        template<size_t N>
+        struct char_type<wchar_t[N]> {
+            using type = wchar_t;
+        };
 
-template<size_t N>
-struct char_type<const wchar_t[N]> {
-    using type = wchar_t;
-};
+        template<size_t N>
+        struct char_type<const wchar_t[N]> {
+            using type = wchar_t;
+        };
 #endif // _WIN32
 
-template<typename CharT, typename S>
-struct is_c_str_helper
-{
-    static constexpr bool value = std::is_same<
-        CharT*,
-        // TODO: I'm so sorry for this... Can this be made cleaner?
-        typename std::add_pointer<
-            typename std::remove_cv<
-                typename std::remove_pointer<
-                    typename std::decay<
-                        S
+        template<typename CharT, typename S>
+        struct is_c_str_helper {
+            static constexpr bool value = std::is_same<
+                    CharT *,
+                    // TODO: I'm so sorry for this... Can this be made cleaner?
+                    typename std::add_pointer<
+                            typename std::remove_cv<
+                                    typename std::remove_pointer<
+                                            typename std::decay<
+                                                    S
+                                            >::type
+                                    >::type
+                            >::type
                     >::type
-                >::type
-            >::type
-        >::type
-    >::value;
-};
+            >::value;
+        };
 
-template<typename S>
-struct is_c_str
-{
-    static constexpr bool value = is_c_str_helper<char, S>::value;
-};
+        template<typename S>
+        struct is_c_str {
+            static constexpr bool value = is_c_str_helper<char, S>::value;
+        };
 
 #ifdef _WIN32
-template<typename S>
-struct is_c_wstr
-{
-    static constexpr bool value = is_c_str_helper<wchar_t, S>::value;
-};
+        template<typename S>
+        struct is_c_wstr {
+            static constexpr bool value = is_c_str_helper<wchar_t, S>::value;
+        };
 #endif // _WIN32
 
-template<typename S>
-struct is_c_str_or_c_wstr
-{
-    static constexpr bool value = is_c_str<S>::value
-#ifdef _WIN32
-        || is_c_wstr<S>::value
+        template<typename S>
+        struct is_c_str_or_c_wstr {
+            static constexpr bool value = is_c_str<S>::value
+                                          #ifdef _WIN32
+                                          || is_c_wstr<S>::value
 #endif
-        ;
-};
+            ;
+        };
 
-template<
-    typename String,
-    typename = decltype(std::declval<String>().data()),
-    typename = typename std::enable_if<!is_c_str_or_c_wstr<String>::value>::type
-> const typename char_type<String>::type* c_str(const String& path)
-{
-    return path.data();
-}
+        template<
+                typename String,
+                typename = decltype(std::declval<String>().data()),
+                typename = typename std::enable_if<!is_c_str_or_c_wstr<String>::value>::type
+        >
+        const typename char_type<String>::type *c_str(const String &path) {
+            return path.data();
+        }
 
-template<
-    typename String,
-    typename = decltype(std::declval<String>().empty()),
-    typename = typename std::enable_if<!is_c_str_or_c_wstr<String>::value>::type
-> bool empty(const String& path)
-{
-    return path.empty();
-}
+        template<
+                typename String,
+                typename = decltype(std::declval<String>().empty()),
+                typename = typename std::enable_if<!is_c_str_or_c_wstr<String>::value>::type
+        >
+        bool empty(const String &path) {
+            return path.empty();
+        }
 
-template<
-    typename String,
-    typename = typename std::enable_if<is_c_str_or_c_wstr<String>::value>::type
-> const typename char_type<String>::type* c_str(String path)
-{
-    return path;
-}
+        template<
+                typename String,
+                typename = typename std::enable_if<is_c_str_or_c_wstr<String>::value>::type
+        >
+        const typename char_type<String>::type *c_str(String path) {
+            return path;
+        }
 
-template<
-    typename String,
-    typename = typename std::enable_if<is_c_str_or_c_wstr<String>::value>::type
-> bool empty(String path)
-{
-    return !path || (*path == 0);
-}
+        template<
+                typename String,
+                typename = typename std::enable_if<is_c_str_or_c_wstr<String>::value>::type
+        >
+        bool empty(String path) {
+            return !path || (*path == 0);
+        }
 
-} // namespace detail
+    } // namespace detail
 } // namespace mio
 
 #endif // MIO_STRING_UTIL_HEADER
@@ -824,485 +832,438 @@ template<
 #endif
 
 namespace mio {
-namespace detail {
+    namespace detail {
 
 #ifdef _WIN32
-namespace win {
+        namespace win {
 
 /** Returns the 4 upper bytes of an 8-byte integer. */
-inline DWORD int64_high(int64_t n) noexcept
-{
-    return n >> 32;
-}
+            inline DWORD int64_high(int64_t n) noexcept {
+                return n >> 32;
+            }
 
 /** Returns the 4 lower bytes of an 8-byte integer. */
-inline DWORD int64_low(int64_t n) noexcept
-{
-    return n & 0xffffffff;
-}
+            inline DWORD int64_low(int64_t n) noexcept {
+                return n & 0xffffffff;
+            }
 
-template<
-    typename String,
-    typename = typename std::enable_if<
-        std::is_same<typename char_type<String>::type, char>::value
-    >::type
-> file_handle_type open_file_helper(const String& path, const access_mode mode)
-{
-    return ::CreateFileA(c_str(path),
-            mode == access_mode::read ? GENERIC_READ : GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            0,
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            0);
-}
+            template<
+                    typename String,
+                    typename = typename std::enable_if<
+                            std::is_same<typename char_type<String>::type, char>::value
+                    >::type
+            >
+            file_handle_type open_file_helper(const String &path, const access_mode mode) {
+                return ::CreateFileA(c_str(path),
+                                     mode == access_mode::read ? GENERIC_READ : GENERIC_READ | GENERIC_WRITE,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                     0,
+                                     OPEN_EXISTING,
+                                     FILE_ATTRIBUTE_NORMAL,
+                                     0);
+            }
 
-template<typename String>
-typename std::enable_if<
-    std::is_same<typename char_type<String>::type, wchar_t>::value,
-    file_handle_type
->::type open_file_helper(const String& path, const access_mode mode)
-{
-    return ::CreateFileW(c_str(path),
-            mode == access_mode::read ? GENERIC_READ : GENERIC_READ | GENERIC_WRITE,
-            FILE_SHARE_READ | FILE_SHARE_WRITE,
-            0,
-            OPEN_EXISTING,
-            FILE_ATTRIBUTE_NORMAL,
-            0);
-}
+            template<typename String>
+            typename std::enable_if<
+                    std::is_same<typename char_type<String>::type, wchar_t>::value,
+                    file_handle_type
+            >::type open_file_helper(const String &path, const access_mode mode) {
+                return ::CreateFileW(c_str(path),
+                                     mode == access_mode::read ? GENERIC_READ : GENERIC_READ | GENERIC_WRITE,
+                                     FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                     0,
+                                     OPEN_EXISTING,
+                                     FILE_ATTRIBUTE_NORMAL,
+                                     0);
+            }
 
-} // win
+        } // win
 #endif // _WIN32
 
 /**
  * Returns the last platform specific system error (errno on POSIX and
  * GetLastError on Win) as a `std::error_code`.
  */
-inline std::error_code last_error() noexcept
-{
-    std::error_code error;
+        inline std::error_code last_error() noexcept {
+            std::error_code error;
 #ifdef _WIN32
-    error.assign(GetLastError(), std::system_category());
+            error.assign(GetLastError(), std::system_category());
 #else
-    error.assign(errno, std::system_category());
+            error.assign(errno, std::system_category());
 #endif
-    return error;
-}
+            return error;
+        }
 
-template<typename String>
-file_handle_type open_file(const String& path, const access_mode mode,
-        std::error_code& error)
-{
-    error.clear();
-    if(detail::empty(path))
-    {
-        error = std::make_error_code(std::errc::invalid_argument);
-        return invalid_handle;
-    }
+        template<typename String>
+        file_handle_type open_file(const String &path, const access_mode mode,
+                                   std::error_code &error) {
+            error.clear();
+            if (detail::empty(path)) {
+                error = std::make_error_code(std::errc::invalid_argument);
+                return invalid_handle;
+            }
 #ifdef _WIN32
-    const auto handle = win::open_file_helper(path, mode);
+            const auto handle = win::open_file_helper(path, mode);
 #else // POSIX
-    const auto handle = ::open(c_str(path),
-            mode == access_mode::read ? O_RDONLY : O_RDWR);
+            const auto handle = ::open(c_str(path),
+                    mode == access_mode::read ? O_RDONLY : O_RDWR);
 #endif
-    if(handle == invalid_handle)
-    {
-        error = detail::last_error();
-    }
-    return handle;
-}
+            if (handle == invalid_handle) {
+                error = detail::last_error();
+            }
+            return handle;
+        }
 
-inline size_t query_file_size(file_handle_type handle, std::error_code& error)
-{
-    error.clear();
+        inline size_t query_file_size(file_handle_type handle, std::error_code &error) {
+            error.clear();
 #ifdef _WIN32
-    LARGE_INTEGER file_size;
-    if(::GetFileSizeEx(handle, &file_size) == 0)
-    {
-        error = detail::last_error();
-        return 0;
-    }
-	return static_cast<int64_t>(file_size.QuadPart);
+            LARGE_INTEGER file_size;
+            if (::GetFileSizeEx(handle, &file_size) == 0) {
+                error = detail::last_error();
+                return 0;
+            }
+            return static_cast<int64_t>(file_size.QuadPart);
 #else // POSIX
-    struct stat sbuf;
-    if(::fstat(handle, &sbuf) == -1)
-    {
-        error = detail::last_error();
-        return 0;
-    }
-    return sbuf.st_size;
+            struct stat sbuf;
+            if(::fstat(handle, &sbuf) == -1)
+            {
+                error = detail::last_error();
+                return 0;
+            }
+            return sbuf.st_size;
 #endif
-}
+        }
 
-struct mmap_context
-{
-    char* data;
-    int64_t length;
-    int64_t mapped_length;
+        struct mmap_context {
+            char *data;
+            int64_t length;
+            int64_t mapped_length;
 #ifdef _WIN32
-    file_handle_type file_mapping_handle;
+            file_handle_type file_mapping_handle;
 #endif
-};
+        };
 
-inline mmap_context memory_map(const file_handle_type file_handle, const int64_t offset,
-    const int64_t length, const access_mode mode, std::error_code& error)
-{
-    const int64_t aligned_offset = make_offset_page_aligned(offset);
-    const int64_t length_to_map = offset - aligned_offset + length;
+        inline mmap_context memory_map(const file_handle_type file_handle, const int64_t offset,
+                                       const int64_t length, const access_mode mode, std::error_code &error) {
+            const int64_t aligned_offset = make_offset_page_aligned(offset);
+            const int64_t length_to_map = offset - aligned_offset + length;
 #ifdef _WIN32
-    const int64_t max_file_size = offset + length;
-    const auto file_mapping_handle = ::CreateFileMapping(
-            file_handle,
-            0,
-            mode == access_mode::read ? PAGE_READONLY : PAGE_READWRITE,
-            win::int64_high(max_file_size),
-            win::int64_low(max_file_size),
-            0);
-    if(file_mapping_handle == invalid_handle)
-    {
-        error = detail::last_error();
-        return {};
-    }
-    char* mapping_start = static_cast<char*>(::MapViewOfFile(
-            file_mapping_handle,
-            mode == access_mode::read ? FILE_MAP_READ : FILE_MAP_WRITE,
-            win::int64_high(aligned_offset),
-            win::int64_low(aligned_offset),
-            length_to_map));
-    if(mapping_start == nullptr)
-    {
-        // Close file handle if mapping it failed.
-        ::CloseHandle(file_mapping_handle);
-        error = detail::last_error();
-        return {};
-    }
+            const int64_t max_file_size = offset + length;
+            const auto file_mapping_handle = ::CreateFileMapping(
+                    file_handle,
+                    0,
+                    mode == access_mode::read ? PAGE_READONLY : PAGE_READWRITE,
+                    win::int64_high(max_file_size),
+                    win::int64_low(max_file_size),
+                    0);
+            if (file_mapping_handle == invalid_handle) {
+                error = detail::last_error();
+                return {};
+            }
+            char *mapping_start = static_cast<char *>(::MapViewOfFile(
+                    file_mapping_handle,
+                    mode == access_mode::read ? FILE_MAP_READ : FILE_MAP_WRITE,
+                    win::int64_high(aligned_offset),
+                    win::int64_low(aligned_offset),
+                    length_to_map));
+            if (mapping_start == nullptr) {
+                // Close file handle if mapping it failed.
+                ::CloseHandle(file_mapping_handle);
+                error = detail::last_error();
+                return {};
+            }
 #else // POSIX
-    char* mapping_start = static_cast<char*>(::mmap(
-            0, // Don't give hint as to where to map.
-            length_to_map,
-            mode == access_mode::read ? PROT_READ : PROT_WRITE,
-            MAP_SHARED,
-            file_handle,
-            aligned_offset));
-    if(mapping_start == MAP_FAILED)
-    {
-        error = detail::last_error();
-        return {};
-    }
+            char* mapping_start = static_cast<char*>(::mmap(
+                    0, // Don't give hint as to where to map.
+                    length_to_map,
+                    mode == access_mode::read ? PROT_READ : PROT_WRITE,
+                    MAP_SHARED,
+                    file_handle,
+                    aligned_offset));
+            if(mapping_start == MAP_FAILED)
+            {
+                error = detail::last_error();
+                return {};
+            }
 #endif
-    mmap_context ctx;
-    ctx.data = mapping_start + offset - aligned_offset;
-    ctx.length = length;
-    ctx.mapped_length = length_to_map;
+            mmap_context ctx;
+            ctx.data = mapping_start + offset - aligned_offset;
+            ctx.length = length;
+            ctx.mapped_length = length_to_map;
 #ifdef _WIN32
-    ctx.file_mapping_handle = file_mapping_handle;
+            ctx.file_mapping_handle = file_mapping_handle;
 #endif
-    return ctx;
-}
+            return ctx;
+        }
 
-} // namespace detail
+    } // namespace detail
 
 // -- basic_mmap --
 
-template<access_mode AccessMode, typename ByteT>
-basic_mmap<AccessMode, ByteT>::~basic_mmap()
-{
-    conditional_sync();
-    unmap();
-}
-
-template<access_mode AccessMode, typename ByteT>
-basic_mmap<AccessMode, ByteT>::basic_mmap(basic_mmap&& other)
-    : data_(std::move(other.data_))
-    , length_(std::move(other.length_))
-    , mapped_length_(std::move(other.mapped_length_))
-    , file_handle_(std::move(other.file_handle_))
-#ifdef _WIN32
-    , file_mapping_handle_(std::move(other.file_mapping_handle_))
-#endif
-    , is_handle_internal_(std::move(other.is_handle_internal_))
-{
-    other.data_ = nullptr;
-    other.length_ = other.mapped_length_ = 0;
-    other.file_handle_ = invalid_handle;
-#ifdef _WIN32
-    other.file_mapping_handle_ = invalid_handle;
-#endif
-}
-
-template<access_mode AccessMode, typename ByteT>
-basic_mmap<AccessMode, ByteT>&
-basic_mmap<AccessMode, ByteT>::operator=(basic_mmap&& other)
-{
-    if(this != &other)
-    {
-        // First the existing mapping needs to be removed.
+    template<access_mode AccessMode, typename ByteT>
+    basic_mmap<AccessMode, ByteT>::~basic_mmap() {
+        conditional_sync();
         unmap();
-        data_ = std::move(other.data_);
-        length_ = std::move(other.length_);
-        mapped_length_ = std::move(other.mapped_length_);
-        file_handle_ = std::move(other.file_handle_);
-#ifdef _WIN32
-        file_mapping_handle_ = std::move(other.file_mapping_handle_);
-#endif
-        is_handle_internal_ = std::move(other.is_handle_internal_);
+    }
 
-        // The moved from basic_mmap's fields need to be reset, because
-        // otherwise other's destructor will unmap the same mapping that was
-        // just moved into this.
+    template<access_mode AccessMode, typename ByteT>
+    basic_mmap<AccessMode, ByteT>::basic_mmap(basic_mmap &&other)
+            : data_(std::move(other.data_)), length_(std::move(other.length_)),
+              mapped_length_(std::move(other.mapped_length_)), file_handle_(std::move(other.file_handle_))
+#ifdef _WIN32
+            , file_mapping_handle_(std::move(other.file_mapping_handle_))
+#endif
+            , is_handle_internal_(std::move(other.is_handle_internal_)) {
         other.data_ = nullptr;
         other.length_ = other.mapped_length_ = 0;
         other.file_handle_ = invalid_handle;
 #ifdef _WIN32
         other.file_mapping_handle_ = invalid_handle;
 #endif
-        other.is_handle_internal_ = false;
     }
-    return *this;
-}
 
-template<access_mode AccessMode, typename ByteT>
-typename basic_mmap<AccessMode, ByteT>::handle_type
-basic_mmap<AccessMode, ByteT>::mapping_handle() const noexcept
-{
+    template<access_mode AccessMode, typename ByteT>
+    basic_mmap<AccessMode, ByteT> &
+    basic_mmap<AccessMode, ByteT>::operator=(basic_mmap &&other) {
+        if (this != &other) {
+            // First the existing mapping needs to be removed.
+            unmap();
+            data_ = std::move(other.data_);
+            length_ = std::move(other.length_);
+            mapped_length_ = std::move(other.mapped_length_);
+            file_handle_ = std::move(other.file_handle_);
 #ifdef _WIN32
-    return file_mapping_handle_;
+            file_mapping_handle_ = std::move(other.file_mapping_handle_);
+#endif
+            is_handle_internal_ = std::move(other.is_handle_internal_);
+
+            // The moved from basic_mmap's fields need to be reset, because
+            // otherwise other's destructor will unmap the same mapping that was
+            // just moved into this.
+            other.data_ = nullptr;
+            other.length_ = other.mapped_length_ = 0;
+            other.file_handle_ = invalid_handle;
+#ifdef _WIN32
+            other.file_mapping_handle_ = invalid_handle;
+#endif
+            other.is_handle_internal_ = false;
+        }
+        return *this;
+    }
+
+    template<access_mode AccessMode, typename ByteT>
+    typename basic_mmap<AccessMode, ByteT>::handle_type
+    basic_mmap<AccessMode, ByteT>::mapping_handle() const noexcept {
+#ifdef _WIN32
+        return file_mapping_handle_;
 #else
-    return file_handle_;
-#endif
-}
-
-template<access_mode AccessMode, typename ByteT>
-template<typename String>
-void basic_mmap<AccessMode, ByteT>::map(const String& path, const size_type offset,
-        const size_type length, std::error_code& error)
-{
-    error.clear();
-    if(detail::empty(path))
-    {
-        error = std::make_error_code(std::errc::invalid_argument);
-        return;
-    }
-    const auto handle = detail::open_file(path, AccessMode, error);
-    if(error)
-    {
-        return;
-    }
-
-    map(handle, offset, length, error);
-    // This MUST be after the call to map, as that sets this to true.
-    if(!error)
-    {
-        is_handle_internal_ = true;
-    }
-}
-
-template<access_mode AccessMode, typename ByteT>
-void basic_mmap<AccessMode, ByteT>::map(const handle_type handle,
-        const size_type offset, const size_type length, std::error_code& error)
-{
-    error.clear();
-    if(handle == invalid_handle)
-    {
-        error = std::make_error_code(std::errc::bad_file_descriptor);
-        return;
-    }
-
-    const auto file_size = detail::query_file_size(handle, error);
-    if(error)
-    {
-        return;
-    }
-
-    if(offset + length > file_size)
-    {
-        error = std::make_error_code(std::errc::invalid_argument);
-        return;
-    }
-
-    const auto ctx = detail::memory_map(handle, offset,
-            length == map_entire_file ? (file_size - offset) : length,
-            AccessMode, error);
-    if(!error)
-    {
-        // We must unmap the previous mapping that may have existed prior to this call.
-        // Note that this must only be invoked after a new mapping has been created in
-        // order to provide the strong guarantee that, should the new mapping fail, the
-        // `map` function leaves this instance in a state as though the function had
-        // never been invoked.
-        unmap();
-        file_handle_ = handle;
-        is_handle_internal_ = false;
-        data_ = reinterpret_cast<pointer>(ctx.data);
-        length_ = ctx.length;
-        mapped_length_ = ctx.mapped_length;
-#ifdef _WIN32
-        file_mapping_handle_ = ctx.file_mapping_handle;
+        return file_handle_;
 #endif
     }
-}
 
-template<access_mode AccessMode, typename ByteT>
-template<access_mode A>
-typename std::enable_if<A == access_mode::write, void>::type
-basic_mmap<AccessMode, ByteT>::sync(std::error_code& error)
-{
-    error.clear();
-    if(!is_open())
-    {
-        error = std::make_error_code(std::errc::bad_file_descriptor);
-        return;
-    }
-
-    if(data())
-    {
-#ifdef _WIN32
-        if(::FlushViewOfFile(get_mapping_start(), mapped_length_) == 0
-           || ::FlushFileBuffers(file_handle_) == 0)
-#else // POSIX
-        if(::msync(get_mapping_start(), mapped_length_, MS_SYNC) != 0)
-#endif
-        {
-            error = detail::last_error();
+    template<access_mode AccessMode, typename ByteT>
+    template<typename String>
+    void basic_mmap<AccessMode, ByteT>::map(const String &path, const size_type offset,
+                                            const size_type length, std::error_code &error) {
+        error.clear();
+        if (detail::empty(path)) {
+            error = std::make_error_code(std::errc::invalid_argument);
             return;
         }
-    }
-#ifdef _WIN32
-    if(::FlushFileBuffers(file_handle_) == 0)
-    {
-        error = detail::last_error();
-    }
-#endif
-}
+        const auto handle = detail::open_file(path, AccessMode, error);
+        if (error) {
+            return;
+        }
 
-template<access_mode AccessMode, typename ByteT>
-void basic_mmap<AccessMode, ByteT>::unmap()
-{
-    if(!is_open()) { return; }
-    // TODO do we care about errors here?
-#ifdef _WIN32
-    if(is_mapped())
-    {
-        ::UnmapViewOfFile(get_mapping_start());
-        ::CloseHandle(file_mapping_handle_);
+        map(handle, offset, length, error);
+        // This MUST be after the call to map, as that sets this to true.
+        if (!error) {
+            is_handle_internal_ = true;
+        }
     }
+
+    template<access_mode AccessMode, typename ByteT>
+    void basic_mmap<AccessMode, ByteT>::map(const handle_type handle,
+                                            const size_type offset, const size_type length, std::error_code &error) {
+        error.clear();
+        if (handle == invalid_handle) {
+            error = std::make_error_code(std::errc::bad_file_descriptor);
+            return;
+        }
+
+        const auto file_size = detail::query_file_size(handle, error);
+        if (error) {
+            return;
+        }
+
+        if (offset + length > file_size) {
+            error = std::make_error_code(std::errc::invalid_argument);
+            return;
+        }
+
+        const auto ctx = detail::memory_map(handle, offset,
+                                            length == map_entire_file ? (file_size - offset) : length,
+                                            AccessMode, error);
+        if (!error) {
+            // We must unmap the previous mapping that may have existed prior to this call.
+            // Note that this must only be invoked after a new mapping has been created in
+            // order to provide the strong guarantee that, should the new mapping fail, the
+            // `map` function leaves this instance in a state as though the function had
+            // never been invoked.
+            unmap();
+            file_handle_ = handle;
+            is_handle_internal_ = false;
+            data_ = reinterpret_cast<pointer>(ctx.data);
+            length_ = ctx.length;
+            mapped_length_ = ctx.mapped_length;
+#ifdef _WIN32
+            file_mapping_handle_ = ctx.file_mapping_handle;
+#endif
+        }
+    }
+
+    template<access_mode AccessMode, typename ByteT>
+    template<access_mode A>
+    typename std::enable_if<A == access_mode::write, void>::type
+    basic_mmap<AccessMode, ByteT>::sync(std::error_code &error) {
+        error.clear();
+        if (!is_open()) {
+            error = std::make_error_code(std::errc::bad_file_descriptor);
+            return;
+        }
+
+        if (data()) {
+#ifdef _WIN32
+            if (::FlushViewOfFile(get_mapping_start(), mapped_length_) == 0
+                || ::FlushFileBuffers(file_handle_) == 0)
 #else // POSIX
-    if(data_) { ::munmap(const_cast<pointer>(get_mapping_start()), mapped_length_); }
+                if(::msync(get_mapping_start(), mapped_length_, MS_SYNC) != 0)
 #endif
-
-    // If `file_handle_` was obtained by our opening it (when map is called with
-    // a path, rather than an existing file handle), we need to close it,
-    // otherwise it must not be closed as it may still be used outside this
-    // instance.
-    if(is_handle_internal_)
-    {
+            {
+                error = detail::last_error();
+                return;
+            }
+        }
 #ifdef _WIN32
-        ::CloseHandle(file_handle_);
-#else // POSIX
-        ::close(file_handle_);
+        if (::FlushFileBuffers(file_handle_) == 0) {
+            error = detail::last_error();
+        }
 #endif
     }
 
-    // Reset fields to their default values.
-    data_ = nullptr;
-    length_ = mapped_length_ = 0;
-    file_handle_ = invalid_handle;
+    template<access_mode AccessMode, typename ByteT>
+    void basic_mmap<AccessMode, ByteT>::unmap() {
+        if (!is_open()) { return; }
+        // TODO do we care about errors here?
 #ifdef _WIN32
-    file_mapping_handle_ = invalid_handle;
-#endif
-}
-
-template<access_mode AccessMode, typename ByteT>
-bool basic_mmap<AccessMode, ByteT>::is_mapped() const noexcept
-{
-#ifdef _WIN32
-    return file_mapping_handle_ != invalid_handle;
+        if (is_mapped()) {
+            ::UnmapViewOfFile(get_mapping_start());
+            ::CloseHandle(file_mapping_handle_);
+        }
 #else // POSIX
-    return is_open();
+        if(data_) { ::munmap(const_cast<pointer>(get_mapping_start()), mapped_length_); }
 #endif
-}
 
-template<access_mode AccessMode, typename ByteT>
-void basic_mmap<AccessMode, ByteT>::swap(basic_mmap& other)
-{
-    if(this != &other)
-    {
-        using std::swap;
-        swap(data_, other.data_);
-        swap(file_handle_, other.file_handle_);
+        // If `file_handle_` was obtained by our opening it (when map is called with
+        // a path, rather than an existing file handle), we need to close it,
+        // otherwise it must not be closed as it may still be used outside this
+        // instance.
+        if (is_handle_internal_) {
 #ifdef _WIN32
-        swap(file_mapping_handle_, other.file_mapping_handle_);
+            ::CloseHandle(file_handle_);
+#else // POSIX
+            ::close(file_handle_);
 #endif
-        swap(length_, other.length_);
-        swap(mapped_length_, other.mapped_length_);
-        swap(is_handle_internal_, other.is_handle_internal_);
+        }
+
+        // Reset fields to their default values.
+        data_ = nullptr;
+        length_ = mapped_length_ = 0;
+        file_handle_ = invalid_handle;
+#ifdef _WIN32
+        file_mapping_handle_ = invalid_handle;
+#endif
     }
-}
 
-template<access_mode AccessMode, typename ByteT>
-template<access_mode A>
-typename std::enable_if<A == access_mode::write, void>::type
-basic_mmap<AccessMode, ByteT>::conditional_sync()
-{
-    // This is invoked from the destructor, so not much we can do about
-    // failures here.
-    std::error_code ec;
-    sync(ec);
-}
+    template<access_mode AccessMode, typename ByteT>
+    bool basic_mmap<AccessMode, ByteT>::is_mapped() const noexcept {
+#ifdef _WIN32
+        return file_mapping_handle_ != invalid_handle;
+#else // POSIX
+        return is_open();
+#endif
+    }
 
-template<access_mode AccessMode, typename ByteT>
-template<access_mode A>
-typename std::enable_if<A == access_mode::read, void>::type
-basic_mmap<AccessMode, ByteT>::conditional_sync()
-{
-    // noop
-}
+    template<access_mode AccessMode, typename ByteT>
+    void basic_mmap<AccessMode, ByteT>::swap(basic_mmap &other) {
+        if (this != &other) {
+            using std::swap;
+            swap(data_, other.data_);
+            swap(file_handle_, other.file_handle_);
+#ifdef _WIN32
+            swap(file_mapping_handle_, other.file_mapping_handle_);
+#endif
+            swap(length_, other.length_);
+            swap(mapped_length_, other.mapped_length_);
+            swap(is_handle_internal_, other.is_handle_internal_);
+        }
+    }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator==(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b)
-{
-    return a.data() == b.data()
-        && a.size() == b.size();
-}
+    template<access_mode AccessMode, typename ByteT>
+    template<access_mode A>
+    typename std::enable_if<A == access_mode::write, void>::type
+    basic_mmap<AccessMode, ByteT>::conditional_sync() {
+        // This is invoked from the destructor, so not much we can do about
+        // failures here.
+        std::error_code ec;
+        sync(ec);
+    }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator!=(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b)
-{
-    return !(a == b);
-}
+    template<access_mode AccessMode, typename ByteT>
+    template<access_mode A>
+    typename std::enable_if<A == access_mode::read, void>::type
+    basic_mmap<AccessMode, ByteT>::conditional_sync() {
+        // noop
+    }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator<(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b)
-{
-    if(a.data() == b.data()) { return a.size() < b.size(); }
-    return a.data() < b.data();
-}
+    template<access_mode AccessMode, typename ByteT>
+    bool operator==(const basic_mmap<AccessMode, ByteT> &a,
+                    const basic_mmap<AccessMode, ByteT> &b) {
+        return a.data() == b.data()
+               && a.size() == b.size();
+    }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator<=(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b)
-{
-    return !(a > b);
-}
+    template<access_mode AccessMode, typename ByteT>
+    bool operator!=(const basic_mmap<AccessMode, ByteT> &a,
+                    const basic_mmap<AccessMode, ByteT> &b) {
+        return !(a == b);
+    }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator>(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b)
-{
-    if(a.data() == b.data()) { return a.size() > b.size(); }
-    return a.data() > b.data();
-}
+    template<access_mode AccessMode, typename ByteT>
+    bool operator<(const basic_mmap<AccessMode, ByteT> &a,
+                   const basic_mmap<AccessMode, ByteT> &b) {
+        if (a.data() == b.data()) { return a.size() < b.size(); }
+        return a.data() < b.data();
+    }
 
-template<access_mode AccessMode, typename ByteT>
-bool operator>=(const basic_mmap<AccessMode, ByteT>& a,
-        const basic_mmap<AccessMode, ByteT>& b)
-{
-    return !(a < b);
-}
+    template<access_mode AccessMode, typename ByteT>
+    bool operator<=(const basic_mmap<AccessMode, ByteT> &a,
+                    const basic_mmap<AccessMode, ByteT> &b) {
+        return !(a > b);
+    }
+
+    template<access_mode AccessMode, typename ByteT>
+    bool operator>(const basic_mmap<AccessMode, ByteT> &a,
+                   const basic_mmap<AccessMode, ByteT> &b) {
+        if (a.data() == b.data()) { return a.size() > b.size(); }
+        return a.data() > b.data();
+    }
+
+    template<access_mode AccessMode, typename ByteT>
+    bool operator>=(const basic_mmap<AccessMode, ByteT> &a,
+                    const basic_mmap<AccessMode, ByteT> &b) {
+        return !(a < b);
+    }
 
 } // namespace mio
 
@@ -1426,371 +1387,373 @@ namespace mio {
  * This is not the default behaviour of `basic_mmap` to avoid allocating on the heap if
  * shared semantics are not required.
  */
-template<
-    access_mode AccessMode,
-    typename ByteT
-> class basic_shared_mmap
-{
-    using impl_type = basic_mmap<AccessMode, ByteT>;
-    std::shared_ptr<impl_type> pimpl_;
+    template<
+            access_mode AccessMode,
+            typename ByteT
+    >
+    class basic_shared_mmap {
+        using impl_type = basic_mmap<AccessMode, ByteT>;
+        std::shared_ptr<impl_type> pimpl_;
 
-public:
-    using value_type = typename impl_type::value_type;
-    using size_type = typename impl_type::size_type;
-    using reference = typename impl_type::reference;
-    using const_reference = typename impl_type::const_reference;
-    using pointer = typename impl_type::pointer;
-    using const_pointer = typename impl_type::const_pointer;
-    using difference_type = typename impl_type::difference_type;
-    using iterator = typename impl_type::iterator;
-    using const_iterator = typename impl_type::const_iterator;
-    using reverse_iterator = typename impl_type::reverse_iterator;
-    using const_reverse_iterator = typename impl_type::const_reverse_iterator;
-    using iterator_category = typename impl_type::iterator_category;
-    using handle_type = typename impl_type::handle_type;
-    using mmap_type = impl_type;
+    public:
+        using value_type = typename impl_type::value_type;
+        using size_type = typename impl_type::size_type;
+        using reference = typename impl_type::reference;
+        using const_reference = typename impl_type::const_reference;
+        using pointer = typename impl_type::pointer;
+        using const_pointer = typename impl_type::const_pointer;
+        using difference_type = typename impl_type::difference_type;
+        using iterator = typename impl_type::iterator;
+        using const_iterator = typename impl_type::const_iterator;
+        using reverse_iterator = typename impl_type::reverse_iterator;
+        using const_reverse_iterator = typename impl_type::const_reverse_iterator;
+        using iterator_category = typename impl_type::iterator_category;
+        using handle_type = typename impl_type::handle_type;
+        using mmap_type = impl_type;
 
-    basic_shared_mmap() = default;
-    basic_shared_mmap(const basic_shared_mmap&) = default;
-    basic_shared_mmap& operator=(const basic_shared_mmap&) = default;
-    basic_shared_mmap(basic_shared_mmap&&) = default;
-    basic_shared_mmap& operator=(basic_shared_mmap&&) = default;
+        basic_shared_mmap() = default;
 
-    /** Takes ownership of an existing mmap object. */
-    basic_shared_mmap(mmap_type&& mmap)
-        : pimpl_(std::make_shared<mmap_type>(std::move(mmap)))
-    {}
+        basic_shared_mmap(const basic_shared_mmap &) = default;
 
-    /** Takes ownership of an existing mmap object. */
-    basic_shared_mmap& operator=(mmap_type&& mmap)
-    {
-        pimpl_ = std::make_shared<mmap_type>(std::move(mmap));
-        return *this;
-    }
+        basic_shared_mmap &operator=(const basic_shared_mmap &) = default;
 
-    /** Initializes this object with an already established shared mmap. */
-    basic_shared_mmap(std::shared_ptr<mmap_type> mmap) : pimpl_(std::move(mmap)) {}
+        basic_shared_mmap(basic_shared_mmap &&) = default;
 
-    /** Initializes this object with an already established shared mmap. */
-    basic_shared_mmap& operator=(std::shared_ptr<mmap_type> mmap)
-    {
-        pimpl_ = std::move(mmap);
-        return *this;
-    }
+        basic_shared_mmap &operator=(basic_shared_mmap &&) = default;
+
+        /** Takes ownership of an existing mmap object. */
+        basic_shared_mmap(mmap_type &&mmap)
+                : pimpl_(std::make_shared<mmap_type>(std::move(mmap))) {}
+
+        /** Takes ownership of an existing mmap object. */
+        basic_shared_mmap &operator=(mmap_type &&mmap) {
+            pimpl_ = std::make_shared<mmap_type>(std::move(mmap));
+            return *this;
+        }
+
+        /** Initializes this object with an already established shared mmap. */
+        basic_shared_mmap(std::shared_ptr<mmap_type> mmap) : pimpl_(std::move(mmap)) {}
+
+        /** Initializes this object with an already established shared mmap. */
+        basic_shared_mmap &operator=(std::shared_ptr<mmap_type> mmap) {
+            pimpl_ = std::move(mmap);
+            return *this;
+        }
 
 #ifdef __cpp_exceptions
-    /**
-     * The same as invoking the `map` function, except any error that may occur
-     * while establishing the mapping is wrapped in a `std::system_error` and is
-     * thrown.
-     */
-    template<typename String>
-    basic_shared_mmap(const String& path, const size_type offset = 0, const size_type length = map_entire_file)
-    {
-        std::error_code error;
-        map(path, offset, length, error);
-        if(error) { throw std::system_error(error); }
-    }
 
-    /**
-     * The same as invoking the `map` function, except any error that may occur
-     * while establishing the mapping is wrapped in a `std::system_error` and is
-     * thrown.
-     */
-    basic_shared_mmap(const handle_type handle, const size_type offset = 0, const size_type length = map_entire_file)
-    {
-        std::error_code error;
-        map(handle, offset, length, error);
-        if(error) { throw std::system_error(error); }
-    }
+        /**
+         * The same as invoking the `map` function, except any error that may occur
+         * while establishing the mapping is wrapped in a `std::system_error` and is
+         * thrown.
+         */
+        template<typename String>
+        basic_shared_mmap(const String &path, const size_type offset = 0, const size_type length = map_entire_file) {
+            std::error_code error;
+            map(path, offset, length, error);
+            if (error) { throw std::system_error(error); }
+        }
+
+        /**
+         * The same as invoking the `map` function, except any error that may occur
+         * while establishing the mapping is wrapped in a `std::system_error` and is
+         * thrown.
+         */
+        basic_shared_mmap(const handle_type handle, const size_type offset = 0,
+                          const size_type length = map_entire_file) {
+            std::error_code error;
+            map(handle, offset, length, error);
+            if (error) { throw std::system_error(error); }
+        }
+
 #endif // __cpp_exceptions
 
-    /**
-     * If this is a read-write mapping and the last reference to the mapping,
-     * the destructor invokes sync. Regardless of the access mode, unmap is
-     * invoked as a final step.
-     */
-    ~basic_shared_mmap() = default;
+        /**
+         * If this is a read-write mapping and the last reference to the mapping,
+         * the destructor invokes sync. Regardless of the access mode, unmap is
+         * invoked as a final step.
+         */
+        ~basic_shared_mmap() = default;
 
-    /** Returns the underlying `std::shared_ptr` instance that holds the mmap. */
-    std::shared_ptr<mmap_type> get_shared_ptr() { return pimpl_; }
+        /** Returns the underlying `std::shared_ptr` instance that holds the mmap. */
+        std::shared_ptr<mmap_type> get_shared_ptr() { return pimpl_; }
 
-    /**
-     * On UNIX systems 'file_handle' and 'mapping_handle' are the same. On Windows,
-     * however, a mapped region of a file gets its own handle, which is returned by
-     * 'mapping_handle'.
-     */
-    handle_type file_handle() const noexcept
-    {
-        return pimpl_ ? pimpl_->file_handle() : invalid_handle;
-    }
-
-    handle_type mapping_handle() const noexcept
-    {
-        return pimpl_ ? pimpl_->mapping_handle() : invalid_handle;
-    }
-
-    /** Returns whether a valid memory mapping has been created. */
-    bool is_open() const noexcept { return pimpl_ && pimpl_->is_open(); }
-
-    /**
-     * Returns true if no mapping was established, that is, conceptually the
-     * same as though the length that was mapped was 0. This function is
-     * provided so that this class has Container semantics.
-     */
-    bool empty() const noexcept { return !pimpl_ || pimpl_->empty(); }
-
-    /**
-     * `size` and `length` both return the logical length, i.e. the number of bytes
-     * user requested to be mapped, while `mapped_length` returns the actual number of
-     * bytes that were mapped which is a multiple of the underlying operating system's
-     * page allocation granularity.
-     */
-    size_type size() const noexcept { return pimpl_ ? pimpl_->length() : 0; }
-    size_type length() const noexcept { return pimpl_ ? pimpl_->length() : 0; }
-    size_type mapped_length() const noexcept
-    {
-        return pimpl_ ? pimpl_->mapped_length() : 0;
-    }
-
-    /**
-     * Returns a pointer to the first requested byte, or `nullptr` if no memory mapping
-     * exists.
-     */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > pointer data() noexcept { return pimpl_->data(); }
-    const_pointer data() const noexcept { return pimpl_ ? pimpl_->data() : nullptr; }
-
-    /**
-     * Returns an iterator to the first requested byte, if a valid memory mapping
-     * exists, otherwise this function call is undefined behaviour.
-     */
-    iterator begin() noexcept { return pimpl_->begin(); }
-    const_iterator begin() const noexcept { return pimpl_->begin(); }
-    const_iterator cbegin() const noexcept { return pimpl_->cbegin(); }
-
-    /**
-     * Returns an iterator one past the last requested byte, if a valid memory mapping
-     * exists, otherwise this function call is undefined behaviour.
-     */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > iterator end() noexcept { return pimpl_->end(); }
-    const_iterator end() const noexcept { return pimpl_->end(); }
-    const_iterator cend() const noexcept { return pimpl_->cend(); }
-
-    /**
-     * Returns a reverse iterator to the last memory mapped byte, if a valid
-     * memory mapping exists, otherwise this function call is undefined
-     * behaviour.
-     */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > reverse_iterator rbegin() noexcept { return pimpl_->rbegin(); }
-    const_reverse_iterator rbegin() const noexcept { return pimpl_->rbegin(); }
-    const_reverse_iterator crbegin() const noexcept { return pimpl_->crbegin(); }
-
-    /**
-     * Returns a reverse iterator past the first mapped byte, if a valid memory
-     * mapping exists, otherwise this function call is undefined behaviour.
-     */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > reverse_iterator rend() noexcept { return pimpl_->rend(); }
-    const_reverse_iterator rend() const noexcept { return pimpl_->rend(); }
-    const_reverse_iterator crend() const noexcept { return pimpl_->crend(); }
-
-    /**
-     * Returns a reference to the `i`th byte from the first requested byte (as returned
-     * by `data`). If this is invoked when no valid memory mapping has been created
-     * prior to this call, undefined behaviour ensues.
-     */
-    reference operator[](const size_type i) noexcept { return (*pimpl_)[i]; }
-    const_reference operator[](const size_type i) const noexcept { return (*pimpl_)[i]; }
-
-    /**
-     * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
-     * reason is reported via `error` and the object remains in a state as if this
-     * function hadn't been called.
-     *
-     * `path`, which must be a path to an existing file, is used to retrieve a file
-     * handle (which is closed when the object destructs or `unmap` is called), which is
-     * then used to memory map the requested region. Upon failure, `error` is set to
-     * indicate the reason and the object remains in an unmapped state.
-     *
-     * `offset` is the number of bytes, relative to the start of the file, where the
-     * mapping should begin. When specifying it, there is no need to worry about
-     * providing a value that is aligned with the operating system's page allocation
-     * granularity. This is adjusted by the implementation such that the first requested
-     * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
-     * `offset` from the start of the file.
-     *
-     * `length` is the number of bytes to map. It may be `map_entire_file`, in which
-     * case a mapping of the entire file is created.
-     */
-    template<typename String>
-    void map(const String& path, const size_type offset,
-        const size_type length, std::error_code& error)
-    {
-        map_impl(path, offset, length, error);
-    }
-
-    /**
-     * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
-     * reason is reported via `error` and the object remains in a state as if this
-     * function hadn't been called.
-     *
-     * `path`, which must be a path to an existing file, is used to retrieve a file
-     * handle (which is closed when the object destructs or `unmap` is called), which is
-     * then used to memory map the requested region. Upon failure, `error` is set to
-     * indicate the reason and the object remains in an unmapped state.
-     *
-     * The entire file is mapped.
-     */
-    template<typename String>
-    void map(const String& path, std::error_code& error)
-    {
-        map_impl(path, 0, map_entire_file, error);
-    }
-
-    /**
-     * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
-     * reason is reported via `error` and the object remains in a state as if this
-     * function hadn't been called.
-     *
-     * `handle`, which must be a valid file handle, which is used to memory map the
-     * requested region. Upon failure, `error` is set to indicate the reason and the
-     * object remains in an unmapped state.
-     *
-     * `offset` is the number of bytes, relative to the start of the file, where the
-     * mapping should begin. When specifying it, there is no need to worry about
-     * providing a value that is aligned with the operating system's page allocation
-     * granularity. This is adjusted by the implementation such that the first requested
-     * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
-     * `offset` from the start of the file.
-     *
-     * `length` is the number of bytes to map. It may be `map_entire_file`, in which
-     * case a mapping of the entire file is created.
-     */
-    void map(const handle_type handle, const size_type offset,
-        const size_type length, std::error_code& error)
-    {
-        map_impl(handle, offset, length, error);
-    }
-
-    /**
-     * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
-     * reason is reported via `error` and the object remains in a state as if this
-     * function hadn't been called.
-     *
-     * `handle`, which must be a valid file handle, which is used to memory map the
-     * requested region. Upon failure, `error` is set to indicate the reason and the
-     * object remains in an unmapped state.
-     *
-     * The entire file is mapped.
-     */
-    void map(const handle_type handle, std::error_code& error)
-    {
-        map_impl(handle, 0, map_entire_file, error);
-    }
-
-    /**
-     * If a valid memory mapping has been created prior to this call, this call
-     * instructs the kernel to unmap the memory region and disassociate this object
-     * from the file.
-     *
-     * The file handle associated with the file that is mapped is only closed if the
-     * mapping was created using a file path. If, on the other hand, an existing
-     * file handle was used to create the mapping, the file handle is not closed.
-     */
-    void unmap() { if(pimpl_) pimpl_->unmap(); }
-
-    void swap(basic_shared_mmap& other) { pimpl_.swap(other.pimpl_); }
-
-    /** Flushes the memory mapped page to disk. Errors are reported via `error`. */
-    template<
-        access_mode A = AccessMode,
-        typename = typename std::enable_if<A == access_mode::write>::type
-    > void sync(std::error_code& error) { if(pimpl_) pimpl_->sync(error); }
-
-    /** All operators compare the underlying `basic_mmap`'s addresses. */
-
-    friend bool operator==(const basic_shared_mmap& a, const basic_shared_mmap& b)
-    {
-        return a.pimpl_ == b.pimpl_;
-    }
-
-    friend bool operator!=(const basic_shared_mmap& a, const basic_shared_mmap& b)
-    {
-        return !(a == b);
-    }
-
-    friend bool operator<(const basic_shared_mmap& a, const basic_shared_mmap& b)
-    {
-        return a.pimpl_ < b.pimpl_;
-    }
-
-    friend bool operator<=(const basic_shared_mmap& a, const basic_shared_mmap& b)
-    {
-        return a.pimpl_ <= b.pimpl_;
-    }
-
-    friend bool operator>(const basic_shared_mmap& a, const basic_shared_mmap& b)
-    {
-        return a.pimpl_ > b.pimpl_;
-    }
-
-    friend bool operator>=(const basic_shared_mmap& a, const basic_shared_mmap& b)
-    {
-        return a.pimpl_ >= b.pimpl_;
-    }
-
-private:
-    template<typename MappingToken>
-    void map_impl(const MappingToken& token, const size_type offset,
-        const size_type length, std::error_code& error)
-    {
-        if(!pimpl_)
-        {
-            mmap_type mmap = make_mmap<mmap_type>(token, offset, length, error);
-            if(error) { return; }
-            pimpl_ = std::make_shared<mmap_type>(std::move(mmap));
+        /**
+         * On UNIX systems 'file_handle' and 'mapping_handle' are the same. On Windows,
+         * however, a mapped region of a file gets its own handle, which is returned by
+         * 'mapping_handle'.
+         */
+        handle_type file_handle() const noexcept {
+            return pimpl_ ? pimpl_->file_handle() : invalid_handle;
         }
-        else
-        {
-            pimpl_->map(token, offset, length, error);
+
+        handle_type mapping_handle() const noexcept {
+            return pimpl_ ? pimpl_->mapping_handle() : invalid_handle;
         }
-    }
-};
+
+        /** Returns whether a valid memory mapping has been created. */
+        bool is_open() const noexcept { return pimpl_ && pimpl_->is_open(); }
+
+        /**
+         * Returns true if no mapping was established, that is, conceptually the
+         * same as though the length that was mapped was 0. This function is
+         * provided so that this class has Container semantics.
+         */
+        bool empty() const noexcept { return !pimpl_ || pimpl_->empty(); }
+
+        /**
+         * `size` and `length` both return the logical length, i.e. the number of bytes
+         * user requested to be mapped, while `mapped_length` returns the actual number of
+         * bytes that were mapped which is a multiple of the underlying operating system's
+         * page allocation granularity.
+         */
+        size_type size() const noexcept { return pimpl_ ? pimpl_->length() : 0; }
+
+        size_type length() const noexcept { return pimpl_ ? pimpl_->length() : 0; }
+
+        size_type mapped_length() const noexcept {
+            return pimpl_ ? pimpl_->mapped_length() : 0;
+        }
+
+        /**
+         * Returns a pointer to the first requested byte, or `nullptr` if no memory mapping
+         * exists.
+         */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        pointer data() noexcept { return pimpl_->data(); }
+
+        const_pointer data() const noexcept { return pimpl_ ? pimpl_->data() : nullptr; }
+
+        /**
+         * Returns an iterator to the first requested byte, if a valid memory mapping
+         * exists, otherwise this function call is undefined behaviour.
+         */
+        iterator begin() noexcept { return pimpl_->begin(); }
+
+        const_iterator begin() const noexcept { return pimpl_->begin(); }
+
+        const_iterator cbegin() const noexcept { return pimpl_->cbegin(); }
+
+        /**
+         * Returns an iterator one past the last requested byte, if a valid memory mapping
+         * exists, otherwise this function call is undefined behaviour.
+         */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        iterator end() noexcept { return pimpl_->end(); }
+
+        const_iterator end() const noexcept { return pimpl_->end(); }
+
+        const_iterator cend() const noexcept { return pimpl_->cend(); }
+
+        /**
+         * Returns a reverse iterator to the last memory mapped byte, if a valid
+         * memory mapping exists, otherwise this function call is undefined
+         * behaviour.
+         */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        reverse_iterator rbegin() noexcept { return pimpl_->rbegin(); }
+
+        const_reverse_iterator rbegin() const noexcept { return pimpl_->rbegin(); }
+
+        const_reverse_iterator crbegin() const noexcept { return pimpl_->crbegin(); }
+
+        /**
+         * Returns a reverse iterator past the first mapped byte, if a valid memory
+         * mapping exists, otherwise this function call is undefined behaviour.
+         */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        reverse_iterator rend() noexcept { return pimpl_->rend(); }
+
+        const_reverse_iterator rend() const noexcept { return pimpl_->rend(); }
+
+        const_reverse_iterator crend() const noexcept { return pimpl_->crend(); }
+
+        /**
+         * Returns a reference to the `i`th byte from the first requested byte (as returned
+         * by `data`). If this is invoked when no valid memory mapping has been created
+         * prior to this call, undefined behaviour ensues.
+         */
+        reference operator[](const size_type i) noexcept { return (*pimpl_)[i]; }
+
+        const_reference operator[](const size_type i) const noexcept { return (*pimpl_)[i]; }
+
+        /**
+         * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
+         * reason is reported via `error` and the object remains in a state as if this
+         * function hadn't been called.
+         *
+         * `path`, which must be a path to an existing file, is used to retrieve a file
+         * handle (which is closed when the object destructs or `unmap` is called), which is
+         * then used to memory map the requested region. Upon failure, `error` is set to
+         * indicate the reason and the object remains in an unmapped state.
+         *
+         * `offset` is the number of bytes, relative to the start of the file, where the
+         * mapping should begin. When specifying it, there is no need to worry about
+         * providing a value that is aligned with the operating system's page allocation
+         * granularity. This is adjusted by the implementation such that the first requested
+         * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
+         * `offset` from the start of the file.
+         *
+         * `length` is the number of bytes to map. It may be `map_entire_file`, in which
+         * case a mapping of the entire file is created.
+         */
+        template<typename String>
+        void map(const String &path, const size_type offset,
+                 const size_type length, std::error_code &error) {
+            map_impl(path, offset, length, error);
+        }
+
+        /**
+         * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
+         * reason is reported via `error` and the object remains in a state as if this
+         * function hadn't been called.
+         *
+         * `path`, which must be a path to an existing file, is used to retrieve a file
+         * handle (which is closed when the object destructs or `unmap` is called), which is
+         * then used to memory map the requested region. Upon failure, `error` is set to
+         * indicate the reason and the object remains in an unmapped state.
+         *
+         * The entire file is mapped.
+         */
+        template<typename String>
+        void map(const String &path, std::error_code &error) {
+            map_impl(path, 0, map_entire_file, error);
+        }
+
+        /**
+         * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
+         * reason is reported via `error` and the object remains in a state as if this
+         * function hadn't been called.
+         *
+         * `handle`, which must be a valid file handle, which is used to memory map the
+         * requested region. Upon failure, `error` is set to indicate the reason and the
+         * object remains in an unmapped state.
+         *
+         * `offset` is the number of bytes, relative to the start of the file, where the
+         * mapping should begin. When specifying it, there is no need to worry about
+         * providing a value that is aligned with the operating system's page allocation
+         * granularity. This is adjusted by the implementation such that the first requested
+         * byte (as returned by `data` or `begin`), so long as `offset` is valid, will be at
+         * `offset` from the start of the file.
+         *
+         * `length` is the number of bytes to map. It may be `map_entire_file`, in which
+         * case a mapping of the entire file is created.
+         */
+        void map(const handle_type handle, const size_type offset,
+                 const size_type length, std::error_code &error) {
+            map_impl(handle, offset, length, error);
+        }
+
+        /**
+         * Establishes a memory mapping with AccessMode. If the mapping is unsuccesful, the
+         * reason is reported via `error` and the object remains in a state as if this
+         * function hadn't been called.
+         *
+         * `handle`, which must be a valid file handle, which is used to memory map the
+         * requested region. Upon failure, `error` is set to indicate the reason and the
+         * object remains in an unmapped state.
+         *
+         * The entire file is mapped.
+         */
+        void map(const handle_type handle, std::error_code &error) {
+            map_impl(handle, 0, map_entire_file, error);
+        }
+
+        /**
+         * If a valid memory mapping has been created prior to this call, this call
+         * instructs the kernel to unmap the memory region and disassociate this object
+         * from the file.
+         *
+         * The file handle associated with the file that is mapped is only closed if the
+         * mapping was created using a file path. If, on the other hand, an existing
+         * file handle was used to create the mapping, the file handle is not closed.
+         */
+        void unmap() { if (pimpl_) pimpl_->unmap(); }
+
+        void swap(basic_shared_mmap &other) { pimpl_.swap(other.pimpl_); }
+
+        /** Flushes the memory mapped page to disk. Errors are reported via `error`. */
+        template<
+                access_mode A = AccessMode,
+                typename = typename std::enable_if<A == access_mode::write>::type
+        >
+        void sync(std::error_code &error) { if (pimpl_) pimpl_->sync(error); }
+
+        /** All operators compare the underlying `basic_mmap`'s addresses. */
+
+        friend bool operator==(const basic_shared_mmap &a, const basic_shared_mmap &b) {
+            return a.pimpl_ == b.pimpl_;
+        }
+
+        friend bool operator!=(const basic_shared_mmap &a, const basic_shared_mmap &b) {
+            return !(a == b);
+        }
+
+        friend bool operator<(const basic_shared_mmap &a, const basic_shared_mmap &b) {
+            return a.pimpl_ < b.pimpl_;
+        }
+
+        friend bool operator<=(const basic_shared_mmap &a, const basic_shared_mmap &b) {
+            return a.pimpl_ <= b.pimpl_;
+        }
+
+        friend bool operator>(const basic_shared_mmap &a, const basic_shared_mmap &b) {
+            return a.pimpl_ > b.pimpl_;
+        }
+
+        friend bool operator>=(const basic_shared_mmap &a, const basic_shared_mmap &b) {
+            return a.pimpl_ >= b.pimpl_;
+        }
+
+    private:
+        template<typename MappingToken>
+        void map_impl(const MappingToken &token, const size_type offset,
+                      const size_type length, std::error_code &error) {
+            if (!pimpl_) {
+                mmap_type mmap = make_mmap<mmap_type>(token, offset, length, error);
+                if (error) { return; }
+                pimpl_ = std::make_shared<mmap_type>(std::move(mmap));
+            } else {
+                pimpl_->map(token, offset, length, error);
+            }
+        }
+    };
 
 /**
  * This is the basis for all read-only mmap objects and should be preferred over
  * directly using basic_shared_mmap.
  */
-template<typename ByteT>
-using basic_shared_mmap_source = basic_shared_mmap<access_mode::read, ByteT>;
+    template<typename ByteT>
+    using basic_shared_mmap_source = basic_shared_mmap<access_mode::read, ByteT>;
 
 /**
  * This is the basis for all read-write mmap objects and should be preferred over
  * directly using basic_shared_mmap.
  */
-template<typename ByteT>
-using basic_shared_mmap_sink = basic_shared_mmap<access_mode::write, ByteT>;
+    template<typename ByteT>
+    using basic_shared_mmap_sink = basic_shared_mmap<access_mode::write, ByteT>;
 
 /**
  * These aliases cover the most common use cases, both representing a raw byte stream
  * (either with a char or an unsigned char/uint8_t).
  */
-using shared_mmap_source = basic_shared_mmap_source<char>;
-using shared_ummap_source = basic_shared_mmap_source<unsigned char>;
+    using shared_mmap_source = basic_shared_mmap_source<char>;
+    using shared_ummap_source = basic_shared_mmap_source<unsigned char>;
 
-using shared_mmap_sink = basic_shared_mmap_sink<char>;
-using shared_ummap_sink = basic_shared_mmap_sink<unsigned char>;
+    using shared_mmap_sink = basic_shared_mmap_sink<char>;
+    using shared_ummap_sink = basic_shared_mmap_sink<unsigned char>;
 
 } // namespace mio
 
@@ -1831,16 +1794,18 @@ using shared_ummap_sink = basic_shared_mmap_sink<unsigned char>;
 # ifndef WIN32_LEAN_AND_MEAN
 #  define WIN32_LEAN_AND_MEAN
 # endif
+
 # include <Windows.h>
+
 # undef max
 # undef min
 #elif defined(__linux__)
 # include <unistd.h>
 #endif
 
- /** Helper macro which should be #defined as "inline"
-  *  in the single header version
-  */
+/** Helper macro which should be #defined as "inline"
+ *  in the single header version
+ */
 #define CSV_INLINE inline
 
 #include <type_traits>
@@ -1863,8 +1828,8 @@ using shared_ummap_sink = basic_shared_mmap_sink<unsigned char>;
 
 #define string_view_lite_VERSION  nssv_STRINGIFY(string_view_lite_MAJOR) "." nssv_STRINGIFY(string_view_lite_MINOR) "." nssv_STRINGIFY(string_view_lite_PATCH)
 
-#define nssv_STRINGIFY(  x )  nssv_STRINGIFY_( x )
-#define nssv_STRINGIFY_( x )  #x
+#define nssv_STRINGIFY(x)  nssv_STRINGIFY_( x )
+#define nssv_STRINGIFY_(x)  #x
 
 // string-view lite configuration:
 
@@ -1960,55 +1925,54 @@ using shared_ummap_sink = basic_shared_mmap_sink<unsigned char>;
 
 namespace nonstd {
 
-template< class CharT, class Traits, class Allocator = std::allocator<CharT> >
-std::basic_string<CharT, Traits, Allocator>
-to_string( std::basic_string_view<CharT, Traits> v, Allocator const & a = Allocator() )
-{
-    return std::basic_string<CharT,Traits, Allocator>( v.begin(), v.end(), a );
-}
+    template<class CharT, class Traits, class Allocator = std::allocator<CharT> >
+    std::basic_string<CharT, Traits, Allocator>
+    to_string(std::basic_string_view<CharT, Traits> v, Allocator const &a = Allocator()) {
+        return std::basic_string<CharT, Traits, Allocator>(v.begin(), v.end(), a);
+    }
 
-template< class CharT, class Traits, class Allocator >
-std::basic_string_view<CharT, Traits>
-to_string_view( std::basic_string<CharT, Traits, Allocator> const & s )
-{
-    return std::basic_string_view<CharT, Traits>( s.data(), s.size() );
-}
+    template<class CharT, class Traits, class Allocator>
+    std::basic_string_view<CharT, Traits>
+    to_string_view(std::basic_string<CharT, Traits, Allocator> const &s) {
+        return std::basic_string_view<CharT, Traits>(s.data(), s.size());
+    }
 
 // Literal operators sv and _sv:
 
 #if nssv_CONFIG_STD_SV_OPERATOR
 
-using namespace std::literals::string_view_literals;
+    using namespace std::literals::string_view_literals;
 
 #endif
 
 #if nssv_CONFIG_USR_SV_OPERATOR
 
-inline namespace literals {
-inline namespace string_view_literals {
+    inline namespace literals {
+        inline namespace string_view_literals {
 
 
-constexpr std::string_view operator "" _sv( const char* str, size_t len ) noexcept  // (1)
-{
-    return std::string_view{ str, len };
-}
+            constexpr std::string_view operator "" _sv(const char *str, size_t len) noexcept  // (1)
+            {
+                return std::string_view{str, len};
+            }
 
-constexpr std::u16string_view operator "" _sv( const char16_t* str, size_t len ) noexcept  // (2)
-{
-    return std::u16string_view{ str, len };
-}
+            constexpr std::u16string_view operator "" _sv(const char16_t *str, size_t len) noexcept  // (2)
+            {
+                return std::u16string_view{str, len};
+            }
 
-constexpr std::u32string_view operator "" _sv( const char32_t* str, size_t len ) noexcept  // (3)
-{
-    return std::u32string_view{ str, len };
-}
+            constexpr std::u32string_view operator "" _sv(const char32_t *str, size_t len) noexcept  // (3)
+            {
+                return std::u32string_view{str, len};
+            }
 
-constexpr std::wstring_view operator "" _sv( const wchar_t* str, size_t len ) noexcept  // (4)
-{
-    return std::wstring_view{ str, len };
-}
+            constexpr std::wstring_view operator "" _sv(const wchar_t *str, size_t len) noexcept  // (4)
+            {
+                return std::wstring_view{str, len};
+            }
 
-}} // namespace literals::string_view_literals
+        }
+    } // namespace literals::string_view_literals
 
 #endif // nssv_CONFIG_USR_SV_OPERATOR
 
@@ -2018,22 +1982,22 @@ constexpr std::wstring_view operator "" _sv( const wchar_t* str, size_t len ) no
 
 namespace nonstd {
 
-using std::string_view;
-using std::wstring_view;
-using std::u16string_view;
-using std::u32string_view;
-using std::basic_string_view;
+    using std::string_view;
+    using std::wstring_view;
+    using std::u16string_view;
+    using std::u32string_view;
+    using std::basic_string_view;
 
 // literal "sv" and "_sv", see above
 
-using std::operator==;
-using std::operator!=;
-using std::operator<;
-using std::operator<=;
-using std::operator>;
-using std::operator>=;
+    using std::operator==;
+    using std::operator!=;
+    using std::operator<;
+    using std::operator<=;
+    using std::operator>;
+    using std::operator>=;
 
-using std::operator<<;
+    using std::operator<<;
 
 } // namespace nonstd
 
@@ -3166,9 +3130,9 @@ nssv_RESTORE_WARNINGS()
 #endif // NONSTD_SV_LITE_H_INCLUDED
 
 
-  // If there is another version of Hedley, then the newer one 
-  // takes precedence.
-  // See: https://github.com/nemequ/hedley
+// If there is another version of Hedley, then the newer one
+// takes precedence.
+// See: https://github.com/nemequ/hedley
 /* Hedley - https://nemequ.github.io/hedley
  * Created by Evan Nemerson <evan@nemerson.com>
  *
@@ -3200,17 +3164,17 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_CONCAT_EX)
 #  undef HEDLEY_CONCAT_EX
 #endif
-#define HEDLEY_CONCAT_EX(a,b) a##b
+#define HEDLEY_CONCAT_EX(a, b) a##b
 
 #if defined(HEDLEY_CONCAT)
 #  undef HEDLEY_CONCAT
 #endif
-#define HEDLEY_CONCAT(a,b) HEDLEY_CONCAT_EX(a,b)
+#define HEDLEY_CONCAT(a, b) HEDLEY_CONCAT_EX(a,b)
 
 #if defined(HEDLEY_VERSION_ENCODE)
 #  undef HEDLEY_VERSION_ENCODE
 #endif
-#define HEDLEY_VERSION_ENCODE(major,minor,revision) (((major) * 1000000) + ((minor) * 1000) + (revision))
+#define HEDLEY_VERSION_ENCODE(major, minor, revision) (((major) * 1000000) + ((minor) * 1000) + (revision))
 
 #if defined(HEDLEY_VERSION_DECODE_MAJOR)
 #  undef HEDLEY_VERSION_DECODE_MAJOR
@@ -3240,7 +3204,7 @@ nssv_RESTORE_WARNINGS()
 #  undef HEDLEY_GNUC_VERSION_CHECK
 #endif
 #if defined(HEDLEY_GNUC_VERSION)
-#  define HEDLEY_GNUC_VERSION_CHECK(major,minor,patch) (HEDLEY_GNUC_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
+#  define HEDLEY_GNUC_VERSION_CHECK(major, minor, patch) (HEDLEY_GNUC_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
 #  define HEDLEY_GNUC_VERSION_CHECK(major,minor,patch) (0)
 #endif
@@ -3260,7 +3224,7 @@ nssv_RESTORE_WARNINGS()
 #  undef HEDLEY_MSVC_VERSION_CHECK
 #endif
 #if !defined(_MSC_VER)
-#  define HEDLEY_MSVC_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_MSVC_VERSION_CHECK(major, minor, patch) (0)
 #elif defined(_MSC_VER) && (_MSC_VER >= 1400)
 #  define HEDLEY_MSVC_VERSION_CHECK(major,minor,patch) (_MSC_FULL_VER >= ((major * 10000000) + (minor * 100000) + (patch)))
 #elif defined(_MSC_VER) && (_MSC_VER >= 1200)
@@ -3284,7 +3248,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_INTEL_VERSION)
 #  define HEDLEY_INTEL_VERSION_CHECK(major,minor,patch) (HEDLEY_INTEL_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_INTEL_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_INTEL_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_PGI_VERSION)
@@ -3300,7 +3264,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_PGI_VERSION)
 #  define HEDLEY_PGI_VERSION_CHECK(major,minor,patch) (HEDLEY_PGI_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_PGI_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_PGI_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_SUNPRO_VERSION)
@@ -3322,7 +3286,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_SUNPRO_VERSION)
 #  define HEDLEY_SUNPRO_VERSION_CHECK(major,minor,patch) (HEDLEY_SUNPRO_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_SUNPRO_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_SUNPRO_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_EMSCRIPTEN_VERSION)
@@ -3338,7 +3302,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_EMSCRIPTEN_VERSION)
 #  define HEDLEY_EMSCRIPTEN_VERSION_CHECK(major,minor,patch) (HEDLEY_EMSCRIPTEN_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_EMSCRIPTEN_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_EMSCRIPTEN_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_ARM_VERSION)
@@ -3356,7 +3320,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_ARM_VERSION)
 #  define HEDLEY_ARM_VERSION_CHECK(major,minor,patch) (HEDLEY_ARM_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_ARM_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_ARM_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_IBM_VERSION)
@@ -3376,7 +3340,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_IBM_VERSION)
 #  define HEDLEY_IBM_VERSION_CHECK(major,minor,patch) (HEDLEY_IBM_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_IBM_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_IBM_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_TI_VERSION)
@@ -3392,7 +3356,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_TI_VERSION)
 #  define HEDLEY_TI_VERSION_CHECK(major,minor,patch) (HEDLEY_TI_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_TI_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_TI_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_CRAY_VERSION)
@@ -3412,7 +3376,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_CRAY_VERSION)
 #  define HEDLEY_CRAY_VERSION_CHECK(major,minor,patch) (HEDLEY_CRAY_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_CRAY_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_CRAY_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_IAR_VERSION)
@@ -3432,7 +3396,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_IAR_VERSION)
 #  define HEDLEY_IAR_VERSION_CHECK(major,minor,patch) (HEDLEY_IAR_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_IAR_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_IAR_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_TINYC_VERSION)
@@ -3448,7 +3412,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_TINYC_VERSION)
 #  define HEDLEY_TINYC_VERSION_CHECK(major,minor,patch) (HEDLEY_TINYC_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_TINYC_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_TINYC_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_DMC_VERSION)
@@ -3464,7 +3428,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_DMC_VERSION)
 #  define HEDLEY_DMC_VERSION_CHECK(major,minor,patch) (HEDLEY_DMC_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_DMC_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_DMC_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_COMPCERT_VERSION)
@@ -3480,7 +3444,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_COMPCERT_VERSION)
 #  define HEDLEY_COMPCERT_VERSION_CHECK(major,minor,patch) (HEDLEY_COMPCERT_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_COMPCERT_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_COMPCERT_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_PELLES_VERSION)
@@ -3496,7 +3460,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_PELLES_VERSION)
 #  define HEDLEY_PELLES_VERSION_CHECK(major,minor,patch) (HEDLEY_PELLES_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
-#  define HEDLEY_PELLES_VERSION_CHECK(major,minor,patch) (0)
+#  define HEDLEY_PELLES_VERSION_CHECK(major, minor, patch) (0)
 #endif
 
 #if defined(HEDLEY_GCC_VERSION)
@@ -3517,7 +3481,7 @@ nssv_RESTORE_WARNINGS()
 #  undef HEDLEY_GCC_VERSION_CHECK
 #endif
 #if defined(HEDLEY_GCC_VERSION)
-#  define HEDLEY_GCC_VERSION_CHECK(major,minor,patch) (HEDLEY_GCC_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
+#  define HEDLEY_GCC_VERSION_CHECK(major, minor, patch) (HEDLEY_GCC_VERSION >= HEDLEY_VERSION_ENCODE(major, minor, patch))
 #else
 #  define HEDLEY_GCC_VERSION_CHECK(major,minor,patch) (0)
 #endif
@@ -3537,7 +3501,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_attribute)
 #  define HEDLEY_GNUC_HAS_ATTRIBUTE(attribute,major,minor,patch) __has_attribute(attribute)
 #else
-#  define HEDLEY_GNUC_HAS_ATTRIBUTE(attribute,major,minor,patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GNUC_HAS_ATTRIBUTE(attribute, major, minor, patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_GCC_HAS_ATTRIBUTE)
@@ -3546,7 +3510,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_attribute)
 #  define HEDLEY_GCC_HAS_ATTRIBUTE(attribute,major,minor,patch) __has_attribute(attribute)
 #else
-#  define HEDLEY_GCC_HAS_ATTRIBUTE(attribute,major,minor,patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GCC_HAS_ATTRIBUTE(attribute, major, minor, patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_HAS_CPP_ATTRIBUTE)
@@ -3562,7 +3526,7 @@ nssv_RESTORE_WARNINGS()
 #  undef HEDLEY_GNUC_HAS_CPP_ATTRIBUTE
 #endif
 #if defined(__has_cpp_attribute) && defined(__cplusplus)
-#  define HEDLEY_GNUC_HAS_CPP_ATTRIBUTE(attribute,major,minor,patch) __has_cpp_attribute(attribute)
+#  define HEDLEY_GNUC_HAS_CPP_ATTRIBUTE(attribute, major, minor, patch) __has_cpp_attribute(attribute)
 #else
 #  define HEDLEY_GNUC_HAS_CPP_ATTRIBUTE(attribute,major,minor,patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
 #endif
@@ -3571,7 +3535,7 @@ nssv_RESTORE_WARNINGS()
 #  undef HEDLEY_GCC_HAS_CPP_ATTRIBUTE
 #endif
 #if defined(__has_cpp_attribute) && defined(__cplusplus)
-#  define HEDLEY_GCC_HAS_CPP_ATTRIBUTE(attribute,major,minor,patch) __has_cpp_attribute(attribute)
+#  define HEDLEY_GCC_HAS_CPP_ATTRIBUTE(attribute, major, minor, patch) __has_cpp_attribute(attribute)
 #else
 #  define HEDLEY_GCC_HAS_CPP_ATTRIBUTE(attribute,major,minor,patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
 #endif
@@ -3589,7 +3553,7 @@ nssv_RESTORE_WARNINGS()
 #  undef HEDLEY_GNUC_HAS_BUILTIN
 #endif
 #if defined(__has_builtin)
-#  define HEDLEY_GNUC_HAS_BUILTIN(builtin,major,minor,patch) __has_builtin(builtin)
+#  define HEDLEY_GNUC_HAS_BUILTIN(builtin, major, minor, patch) __has_builtin(builtin)
 #else
 #  define HEDLEY_GNUC_HAS_BUILTIN(builtin,major,minor,patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
 #endif
@@ -3598,7 +3562,7 @@ nssv_RESTORE_WARNINGS()
 #  undef HEDLEY_GCC_HAS_BUILTIN
 #endif
 #if defined(__has_builtin)
-#  define HEDLEY_GCC_HAS_BUILTIN(builtin,major,minor,patch) __has_builtin(builtin)
+#  define HEDLEY_GCC_HAS_BUILTIN(builtin, major, minor, patch) __has_builtin(builtin)
 #else
 #  define HEDLEY_GCC_HAS_BUILTIN(builtin,major,minor,patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
 #endif
@@ -3618,7 +3582,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_feature)
 #  define HEDLEY_GNUC_HAS_FEATURE(feature,major,minor,patch) __has_feature(feature)
 #else
-#  define HEDLEY_GNUC_HAS_FEATURE(feature,major,minor,patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GNUC_HAS_FEATURE(feature, major, minor, patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_GCC_HAS_FEATURE)
@@ -3627,7 +3591,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_feature)
 #  define HEDLEY_GCC_HAS_FEATURE(feature,major,minor,patch) __has_feature(feature)
 #else
-#  define HEDLEY_GCC_HAS_FEATURE(feature,major,minor,patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GCC_HAS_FEATURE(feature, major, minor, patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_HAS_EXTENSION)
@@ -3645,7 +3609,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_extension)
 #  define HEDLEY_GNUC_HAS_EXTENSION(extension,major,minor,patch) __has_extension(extension)
 #else
-#  define HEDLEY_GNUC_HAS_EXTENSION(extension,major,minor,patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GNUC_HAS_EXTENSION(extension, major, minor, patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_GCC_HAS_EXTENSION)
@@ -3654,7 +3618,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_extension)
 #  define HEDLEY_GCC_HAS_EXTENSION(extension,major,minor,patch) __has_extension(extension)
 #else
-#  define HEDLEY_GCC_HAS_EXTENSION(extension,major,minor,patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GCC_HAS_EXTENSION(extension, major, minor, patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_HAS_DECLSPEC_ATTRIBUTE)
@@ -3672,7 +3636,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_declspec_attribute)
 #  define HEDLEY_GNUC_HAS_DECLSPEC_ATTRIBUTE(attribute,major,minor,patch) __has_declspec_attribute(attribute)
 #else
-#  define HEDLEY_GNUC_HAS_DECLSPEC_ATTRIBUTE(attribute,major,minor,patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GNUC_HAS_DECLSPEC_ATTRIBUTE(attribute, major, minor, patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_GCC_HAS_DECLSPEC_ATTRIBUTE)
@@ -3681,7 +3645,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_declspec_attribute)
 #  define HEDLEY_GCC_HAS_DECLSPEC_ATTRIBUTE(attribute,major,minor,patch) __has_declspec_attribute(attribute)
 #else
-#  define HEDLEY_GCC_HAS_DECLSPEC_ATTRIBUTE(attribute,major,minor,patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GCC_HAS_DECLSPEC_ATTRIBUTE(attribute, major, minor, patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_HAS_WARNING)
@@ -3699,7 +3663,7 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_warning)
 #  define HEDLEY_GNUC_HAS_WARNING(warning,major,minor,patch) __has_warning(warning)
 #else
-#  define HEDLEY_GNUC_HAS_WARNING(warning,major,minor,patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GNUC_HAS_WARNING(warning, major, minor, patch) HEDLEY_GNUC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_GCC_HAS_WARNING)
@@ -3708,24 +3672,24 @@ nssv_RESTORE_WARNINGS()
 #if defined(__has_warning)
 #  define HEDLEY_GCC_HAS_WARNING(warning,major,minor,patch) __has_warning(warning)
 #else
-#  define HEDLEY_GCC_HAS_WARNING(warning,major,minor,patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GCC_HAS_WARNING(warning, major, minor, patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if \
   (defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L)) || \
   defined(__clang__) || \
-  HEDLEY_GCC_VERSION_CHECK(3,0,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_IAR_VERSION_CHECK(8,0,0) || \
-  HEDLEY_PGI_VERSION_CHECK(18,4,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(6,0,0) || \
-  HEDLEY_CRAY_VERSION_CHECK(5,0,0) || \
-  HEDLEY_TINYC_VERSION_CHECK(0,9,17) || \
-  HEDLEY_SUNPRO_VERSION_CHECK(8,0,0) || \
-  (HEDLEY_IBM_VERSION_CHECK(10,1,0) && defined(__C99_PRAGMA_OPERATOR))
+  HEDLEY_GCC_VERSION_CHECK(3, 0, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_IAR_VERSION_CHECK(8, 0, 0) || \
+  HEDLEY_PGI_VERSION_CHECK(18, 4, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(6, 0, 0) || \
+  HEDLEY_CRAY_VERSION_CHECK(5, 0, 0) || \
+  HEDLEY_TINYC_VERSION_CHECK(0, 9, 17) || \
+  HEDLEY_SUNPRO_VERSION_CHECK(8, 0, 0) || \
+  (HEDLEY_IBM_VERSION_CHECK(10, 1, 0) && defined(__C99_PRAGMA_OPERATOR))
 #  define HEDLEY_PRAGMA(value) _Pragma(#value)
-#elif HEDLEY_MSVC_VERSION_CHECK(15,0,0)
+#elif HEDLEY_MSVC_VERSION_CHECK(15, 0, 0)
 #  define HEDLEY_PRAGMA(value) __pragma(value)
 #else
 #  define HEDLEY_PRAGMA(value)
@@ -3740,13 +3704,13 @@ nssv_RESTORE_WARNINGS()
 #if defined(__clang__)
 #  define HEDLEY_DIAGNOSTIC_PUSH _Pragma("clang diagnostic push")
 #  define HEDLEY_DIAGNOSTIC_POP _Pragma("clang diagnostic pop")
-#elif HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+#elif HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_DIAGNOSTIC_PUSH _Pragma("warning(push)")
 #  define HEDLEY_DIAGNOSTIC_POP _Pragma("warning(pop)")
-#elif HEDLEY_GCC_VERSION_CHECK(4,6,0)
+#elif HEDLEY_GCC_VERSION_CHECK(4, 6, 0)
 #  define HEDLEY_DIAGNOSTIC_PUSH _Pragma("GCC diagnostic push")
 #  define HEDLEY_DIAGNOSTIC_POP _Pragma("GCC diagnostic pop")
-#elif HEDLEY_MSVC_VERSION_CHECK(15,0,0)
+#elif HEDLEY_MSVC_VERSION_CHECK(15, 0, 0)
 #  define HEDLEY_DIAGNOSTIC_PUSH __pragma(warning(push))
 #  define HEDLEY_DIAGNOSTIC_POP __pragma(warning(pop))
 #elif HEDLEY_ARM_VERSION_CHECK(5,6,0)
@@ -3768,13 +3732,13 @@ nssv_RESTORE_WARNINGS()
 #endif
 #if HEDLEY_HAS_WARNING("-Wdeprecated-declarations")
 #  define HEDLEY_DIAGNOSTIC_DISABLE_DEPRECATED _Pragma("clang diagnostic ignored \"-Wdeprecated-declarations\"")
-#elif HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+#elif HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_DEPRECATED _Pragma("warning(disable:1478 1786)")
-#elif HEDLEY_PGI_VERSION_CHECK(17,10,0)
+#elif HEDLEY_PGI_VERSION_CHECK(17, 10, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_DEPRECATED _Pragma("diag_suppress 1215,1444")
-#elif HEDLEY_GCC_VERSION_CHECK(4,3,0)
+#elif HEDLEY_GCC_VERSION_CHECK(4, 3, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_DEPRECATED _Pragma("GCC diagnostic ignored \"-Wdeprecated-declarations\"")
-#elif HEDLEY_MSVC_VERSION_CHECK(15,0,0)
+#elif HEDLEY_MSVC_VERSION_CHECK(15, 0, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_DEPRECATED __pragma(warning(disable:4996))
 #elif HEDLEY_TI_VERSION_CHECK(8,0,0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_DEPRECATED _Pragma("diag_suppress 1291,1718")
@@ -3795,13 +3759,13 @@ nssv_RESTORE_WARNINGS()
 #endif
 #if HEDLEY_HAS_WARNING("-Wunknown-pragmas")
 #  define HEDLEY_DIAGNOSTIC_DISABLE_UNKNOWN_PRAGMAS _Pragma("clang diagnostic ignored \"-Wunknown-pragmas\"")
-#elif HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+#elif HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_UNKNOWN_PRAGMAS _Pragma("warning(disable:161)")
-#elif HEDLEY_PGI_VERSION_CHECK(17,10,0)
+#elif HEDLEY_PGI_VERSION_CHECK(17, 10, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_UNKNOWN_PRAGMAS _Pragma("diag_suppress 1675")
-#elif HEDLEY_GCC_VERSION_CHECK(4,3,0)
+#elif HEDLEY_GCC_VERSION_CHECK(4, 3, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_UNKNOWN_PRAGMAS _Pragma("GCC diagnostic ignored \"-Wunknown-pragmas\"")
-#elif HEDLEY_MSVC_VERSION_CHECK(15,0,0)
+#elif HEDLEY_MSVC_VERSION_CHECK(15, 0, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_UNKNOWN_PRAGMAS __pragma(warning(disable:4068))
 #elif HEDLEY_TI_VERSION_CHECK(8,0,0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_UNKNOWN_PRAGMAS _Pragma("diag_suppress 163")
@@ -3816,9 +3780,9 @@ nssv_RESTORE_WARNINGS()
 #endif
 #if HEDLEY_HAS_WARNING("-Wcast-qual")
 #  define HEDLEY_DIAGNOSTIC_DISABLE_CAST_QUAL _Pragma("clang diagnostic ignored \"-Wcast-qual\"")
-#elif HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+#elif HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_CAST_QUAL _Pragma("warning(disable:2203 2331)")
-#elif HEDLEY_GCC_VERSION_CHECK(3,0,0)
+#elif HEDLEY_GCC_VERSION_CHECK(3, 0, 0)
 #  define HEDLEY_DIAGNOSTIC_DISABLE_CAST_QUAL _Pragma("GCC diagnostic ignored \"-Wcast-qual\"")
 #else
 #  define HEDLEY_DIAGNOSTIC_DISABLE_CAST_QUAL
@@ -3835,12 +3799,12 @@ nssv_RESTORE_WARNINGS()
 #  define HEDLEY_DEPRECATED_FOR(since, replacement) [[deprecated("Since " #since "; use " #replacement)]]
 #elif \
   HEDLEY_HAS_EXTENSION(attribute_deprecated_with_message) || \
-  HEDLEY_GCC_VERSION_CHECK(4,5,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_ARM_VERSION_CHECK(5,6,0) || \
-  HEDLEY_SUNPRO_VERSION_CHECK(5,13,0) || \
-  HEDLEY_PGI_VERSION_CHECK(17,10,0) || \
-  HEDLEY_TI_VERSION_CHECK(8,3,0)
+  HEDLEY_GCC_VERSION_CHECK(4, 5, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(5, 6, 0) || \
+  HEDLEY_SUNPRO_VERSION_CHECK(5, 13, 0) || \
+  HEDLEY_PGI_VERSION_CHECK(17, 10, 0) || \
+  HEDLEY_TI_VERSION_CHECK(8, 3, 0)
 #  define HEDLEY_DEPRECATED(since) __attribute__((__deprecated__("Since " #since)))
 #  define HEDLEY_DEPRECATED_FOR(since, replacement) __attribute__((__deprecated__("Since " #since "; use " #replacement)))
 #elif \
@@ -3872,8 +3836,8 @@ nssv_RESTORE_WARNINGS()
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(warning) || \
-  HEDLEY_GCC_VERSION_CHECK(4,3,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+  HEDLEY_GCC_VERSION_CHECK(4, 3, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_UNAVAILABLE(available_since) __attribute__((__warning__("Not available until " #available_since)))
 #else
 #  define HEDLEY_UNAVAILABLE(available_since)
@@ -3886,12 +3850,12 @@ nssv_RESTORE_WARNINGS()
 #  define HEDLEY_WARN_UNUSED_RESULT [[nodiscard]]
 #elif \
   HEDLEY_HAS_ATTRIBUTE(warn_unused_result) || \
-  HEDLEY_GCC_VERSION_CHECK(3,4,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_TI_VERSION_CHECK(8,0,0) || \
-  (HEDLEY_TI_VERSION_CHECK(7,3,0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__)) || \
-  (HEDLEY_SUNPRO_VERSION_CHECK(5,15,0) && defined(__cplusplus)) || \
-  HEDLEY_PGI_VERSION_CHECK(17,10,0)
+  HEDLEY_GCC_VERSION_CHECK(3, 4, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_TI_VERSION_CHECK(8, 0, 0) || \
+  (HEDLEY_TI_VERSION_CHECK(7, 3, 0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__)) || \
+  (HEDLEY_SUNPRO_VERSION_CHECK(5, 15, 0) && defined(__cplusplus)) || \
+  HEDLEY_PGI_VERSION_CHECK(17, 10, 0)
 #  define HEDLEY_WARN_UNUSED_RESULT __attribute__((__warn_unused_result__))
 #elif defined(_Check_return_) /* SAL */
 #  define HEDLEY_WARN_UNUSED_RESULT _Check_return_
@@ -3904,9 +3868,9 @@ nssv_RESTORE_WARNINGS()
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(sentinel) || \
-  HEDLEY_GCC_VERSION_CHECK(4,0,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_ARM_VERSION_CHECK(5,4,0)
+  HEDLEY_GCC_VERSION_CHECK(4, 0, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(5, 4, 0)
 #  define HEDLEY_SENTINEL(position) __attribute__((__sentinel__(position)))
 #else
 #  define HEDLEY_SENTINEL(position)
@@ -3915,9 +3879,9 @@ nssv_RESTORE_WARNINGS()
 #if defined(HEDLEY_NO_RETURN)
 #  undef HEDLEY_NO_RETURN
 #endif
-#if HEDLEY_IAR_VERSION_CHECK(8,0,0)
+#if HEDLEY_IAR_VERSION_CHECK(8, 0, 0)
 #  define HEDLEY_NO_RETURN __noreturn
-#elif HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+#elif HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_NO_RETURN __attribute__((__noreturn__))
 #elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
 #  define HEDLEY_NO_RETURN _Noreturn
@@ -3925,12 +3889,12 @@ nssv_RESTORE_WARNINGS()
 #  define HEDLEY_NO_RETURN [[noreturn]]
 #elif \
   HEDLEY_HAS_ATTRIBUTE(noreturn) || \
-  HEDLEY_GCC_VERSION_CHECK(3,2,0) || \
-  HEDLEY_SUNPRO_VERSION_CHECK(5,11,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_IBM_VERSION_CHECK(10,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(18,0,0) || \
-  (HEDLEY_TI_VERSION_CHECK(17,3,0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
+  HEDLEY_GCC_VERSION_CHECK(3, 2, 0) || \
+  HEDLEY_SUNPRO_VERSION_CHECK(5, 11, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(10, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(18, 0, 0) || \
+  (HEDLEY_TI_VERSION_CHECK(17, 3, 0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
 #  define HEDLEY_NO_RETURN __attribute__((__noreturn__))
 #elif HEDLEY_MSVC_VERSION_CHECK(13,10,0)
 #  define HEDLEY_NO_RETURN __declspec(noreturn)
@@ -3952,11 +3916,11 @@ nssv_RESTORE_WARNINGS()
 #endif
 #if \
   (HEDLEY_HAS_BUILTIN(__builtin_unreachable) && (!defined(HEDLEY_ARM_VERSION))) || \
-  HEDLEY_GCC_VERSION_CHECK(4,5,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_IBM_VERSION_CHECK(13,1,5)
+  HEDLEY_GCC_VERSION_CHECK(4, 5, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(13, 1, 5)
 #  define HEDLEY_UNREACHABLE() __builtin_unreachable()
-#elif HEDLEY_MSVC_VERSION_CHECK(13,10,0)
+#elif HEDLEY_MSVC_VERSION_CHECK(13, 10, 0)
 #  define HEDLEY_UNREACHABLE() __assume(0)
 #elif HEDLEY_TI_VERSION_CHECK(6,0,0)
 #  if defined(__cplusplus)
@@ -3979,12 +3943,12 @@ nssv_RESTORE_WARNINGS()
 #  undef HEDLEY_ASSUME
 #endif
 #if \
-  HEDLEY_MSVC_VERSION_CHECK(13,10,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+  HEDLEY_MSVC_VERSION_CHECK(13, 10, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_ASSUME(expr) __assume(expr)
 #elif HEDLEY_HAS_BUILTIN(__builtin_assume)
 #  define HEDLEY_ASSUME(expr) __builtin_assume(expr)
-#elif HEDLEY_TI_VERSION_CHECK(6,0,0)
+#elif HEDLEY_TI_VERSION_CHECK(6, 0, 0)
 #  if defined(__cplusplus)
 #    define HEDLEY_ASSUME(expr) std::_nassert(expr)
 #  else
@@ -3992,9 +3956,9 @@ nssv_RESTORE_WARNINGS()
 #  endif
 #elif \
   (HEDLEY_HAS_BUILTIN(__builtin_unreachable) && !defined(HEDLEY_ARM_VERSION)) || \
-  HEDLEY_GCC_VERSION_CHECK(4,5,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_IBM_VERSION_CHECK(13,1,5)
+  HEDLEY_GCC_VERSION_CHECK(4, 5, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(13, 1, 5)
 #  define HEDLEY_ASSUME(expr) ((void) ((expr) ? 1 : (__builtin_unreachable(), 1)))
 #else
 #  define HEDLEY_ASSUME(expr) ((void) (expr))
@@ -4004,7 +3968,7 @@ nssv_RESTORE_WARNINGS()
 HEDLEY_DIAGNOSTIC_PUSH
 #if \
   HEDLEY_HAS_WARNING("-Wvariadic-macros") || \
-  HEDLEY_GCC_VERSION_CHECK(4,0,0)
+  HEDLEY_GCC_VERSION_CHECK(4, 0, 0)
 #  if defined(__clang__)
 #    pragma clang diagnostic ignored "-Wvariadic-macros"
 #  elif defined(HEDLEY_GCC_VERSION)
@@ -4016,9 +3980,9 @@ HEDLEY_DIAGNOSTIC_PUSH
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(nonnull) || \
-  HEDLEY_GCC_VERSION_CHECK(3,3,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0)
+  HEDLEY_GCC_VERSION_CHECK(3, 3, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0)
 #  define HEDLEY_NON_NULL(...) __attribute__((__nonnull__(__VA_ARGS__)))
 #else
 #  define HEDLEY_NON_NULL(...)
@@ -4028,18 +3992,18 @@ HEDLEY_DIAGNOSTIC_POP
 #if defined(HEDLEY_PRINTF_FORMAT)
 #  undef HEDLEY_PRINTF_FORMAT
 #endif
-#if defined(__MINGW32__) && HEDLEY_GCC_HAS_ATTRIBUTE(format,4,4,0) && !defined(__USE_MINGW_ANSI_STDIO)
+#if defined(__MINGW32__) && HEDLEY_GCC_HAS_ATTRIBUTE(format, 4, 4, 0) && !defined(__USE_MINGW_ANSI_STDIO)
 #  define HEDLEY_PRINTF_FORMAT(string_idx,first_to_check) __attribute__((__format__(ms_printf, string_idx, first_to_check)))
-#elif defined(__MINGW32__) && HEDLEY_GCC_HAS_ATTRIBUTE(format,4,4,0) && defined(__USE_MINGW_ANSI_STDIO)
-#  define HEDLEY_PRINTF_FORMAT(string_idx,first_to_check) __attribute__((__format__(gnu_printf, string_idx, first_to_check)))
+#elif defined(__MINGW32__) && HEDLEY_GCC_HAS_ATTRIBUTE(format, 4, 4, 0) && defined(__USE_MINGW_ANSI_STDIO)
+#  define HEDLEY_PRINTF_FORMAT(string_idx, first_to_check) __attribute__((__format__(gnu_printf, string_idx, first_to_check)))
 #elif \
   HEDLEY_HAS_ATTRIBUTE(format) || \
-  HEDLEY_GCC_VERSION_CHECK(3,1,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_ARM_VERSION_CHECK(5,6,0) || \
-  HEDLEY_IBM_VERSION_CHECK(10,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(8,0,0) || \
-  (HEDLEY_TI_VERSION_CHECK(7,3,0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
+  HEDLEY_GCC_VERSION_CHECK(3, 1, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(5, 6, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(10, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(8, 0, 0) || \
+  (HEDLEY_TI_VERSION_CHECK(7, 3, 0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
 #  define HEDLEY_PRINTF_FORMAT(string_idx,first_to_check) __attribute__((__format__(__printf__, string_idx, first_to_check)))
 #elif HEDLEY_PELLES_VERSION_CHECK(6,0,0)
 #  define HEDLEY_PRINTF_FORMAT(string_idx,first_to_check) __declspec(vaformat(printf,string_idx,first_to_check))
@@ -4076,7 +4040,7 @@ HEDLEY_DIAGNOSTIC_POP
 #endif
 #if \
   HEDLEY_HAS_BUILTIN(__builtin_expect_with_probability) || \
-  HEDLEY_GCC_VERSION_CHECK(9,0,0)
+  HEDLEY_GCC_VERSION_CHECK(9, 0, 0)
 #  define HEDLEY_PREDICT(expr, value, probability) __builtin_expect_with_probability(expr, value, probability)
 #  define HEDLEY_PREDICT_TRUE(expr, probability) __builtin_expect_with_probability(!!(expr), 1, probability)
 #  define HEDLEY_PREDICT_FALSE(expr, probability) __builtin_expect_with_probability(!!(expr), 0, probability)
@@ -4087,13 +4051,13 @@ HEDLEY_DIAGNOSTIC_POP
 #  endif
 #elif \
   HEDLEY_HAS_BUILTIN(__builtin_expect) || \
-  HEDLEY_GCC_VERSION_CHECK(3,0,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  (HEDLEY_SUNPRO_VERSION_CHECK(5,15,0) && defined(__cplusplus)) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_IBM_VERSION_CHECK(10,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(6,1,0) || \
-  HEDLEY_TINYC_VERSION_CHECK(0,9,27)
+  HEDLEY_GCC_VERSION_CHECK(3, 0, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  (HEDLEY_SUNPRO_VERSION_CHECK(5, 15, 0) && defined(__cplusplus)) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(10, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(6, 1, 0) || \
+  HEDLEY_TINYC_VERSION_CHECK(0, 9, 27)
 #  define HEDLEY_PREDICT(expr, expected, probability) \
   (((probability) >= 0.9) ? __builtin_expect(!!(expr), (expected)) : (((void) (expected)), !!(expr)))
 #  define HEDLEY_PREDICT_TRUE(expr, probability) \
@@ -4124,13 +4088,13 @@ HEDLEY_DIAGNOSTIC_POP
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(malloc) || \
-  HEDLEY_GCC_VERSION_CHECK(3,1,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_SUNPRO_VERSION_CHECK(5,11,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_IBM_VERSION_CHECK(12,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(8,0,0) || \
-  (HEDLEY_TI_VERSION_CHECK(7,3,0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
+  HEDLEY_GCC_VERSION_CHECK(3, 1, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_SUNPRO_VERSION_CHECK(5, 11, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(12, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(8, 0, 0) || \
+  (HEDLEY_TI_VERSION_CHECK(7, 3, 0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
 #  define HEDLEY_MALLOC __attribute__((__malloc__))
 #elif HEDLEY_MSVC_VERSION_CHECK(14, 0, 0)
 #  define HEDLEY_MALLOC __declspec(restrict)
@@ -4143,16 +4107,16 @@ HEDLEY_DIAGNOSTIC_POP
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(pure) || \
-  HEDLEY_GCC_VERSION_CHECK(2,96,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_SUNPRO_VERSION_CHECK(5,11,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_IBM_VERSION_CHECK(10,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(8,0,0) || \
-  (HEDLEY_TI_VERSION_CHECK(7,3,0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__)) || \
-  HEDLEY_PGI_VERSION_CHECK(17,10,0)
+  HEDLEY_GCC_VERSION_CHECK(2, 96, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_SUNPRO_VERSION_CHECK(5, 11, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(10, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(8, 0, 0) || \
+  (HEDLEY_TI_VERSION_CHECK(7, 3, 0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__)) || \
+  HEDLEY_PGI_VERSION_CHECK(17, 10, 0)
 #  define HEDLEY_PURE __attribute__((__pure__))
-#elif HEDLEY_TI_VERSION_CHECK(6,0,0) && defined(__cplusplus)
+#elif HEDLEY_TI_VERSION_CHECK(6, 0, 0) && defined(__cplusplus)
 #  define HEDLEY_PURE _Pragma("FUNC_IS_PURE;")
 #else
 #  define HEDLEY_PURE
@@ -4163,14 +4127,14 @@ HEDLEY_DIAGNOSTIC_POP
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(const) || \
-  HEDLEY_GCC_VERSION_CHECK(2,5,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_SUNPRO_VERSION_CHECK(5,11,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_IBM_VERSION_CHECK(10,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(8,0,0) || \
-  (HEDLEY_TI_VERSION_CHECK(7,3,0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__)) || \
-  HEDLEY_PGI_VERSION_CHECK(17,10,0)
+  HEDLEY_GCC_VERSION_CHECK(2, 5, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_SUNPRO_VERSION_CHECK(5, 11, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(10, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(8, 0, 0) || \
+  (HEDLEY_TI_VERSION_CHECK(7, 3, 0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__)) || \
+  HEDLEY_PGI_VERSION_CHECK(17, 10, 0)
 #  define HEDLEY_CONST __attribute__((__const__))
 #else
 #  define HEDLEY_CONST HEDLEY_PURE
@@ -4182,18 +4146,18 @@ HEDLEY_DIAGNOSTIC_POP
 #if defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 199901L) && !defined(__cplusplus)
 #  define HEDLEY_RESTRICT restrict
 #elif \
-  HEDLEY_GCC_VERSION_CHECK(3,1,0) || \
-  HEDLEY_MSVC_VERSION_CHECK(14,0,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_IBM_VERSION_CHECK(10,1,0) || \
-  HEDLEY_PGI_VERSION_CHECK(17,10,0) || \
-  HEDLEY_TI_VERSION_CHECK(8,0,0) || \
-  (HEDLEY_SUNPRO_VERSION_CHECK(5,14,0) && defined(__cplusplus)) || \
-  HEDLEY_IAR_VERSION_CHECK(8,0,0) || \
+  HEDLEY_GCC_VERSION_CHECK(3, 1, 0) || \
+  HEDLEY_MSVC_VERSION_CHECK(14, 0, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(10, 1, 0) || \
+  HEDLEY_PGI_VERSION_CHECK(17, 10, 0) || \
+  HEDLEY_TI_VERSION_CHECK(8, 0, 0) || \
+  (HEDLEY_SUNPRO_VERSION_CHECK(5, 14, 0) && defined(__cplusplus)) || \
+  HEDLEY_IAR_VERSION_CHECK(8, 0, 0) || \
   defined(__clang__)
 #  define HEDLEY_RESTRICT __restrict
-#elif HEDLEY_SUNPRO_VERSION_CHECK(5,3,0) && !defined(__cplusplus)
+#elif HEDLEY_SUNPRO_VERSION_CHECK(5, 3, 0) && !defined(__cplusplus)
 #  define HEDLEY_RESTRICT _Restrict
 #else
 #  define HEDLEY_RESTRICT
@@ -4208,7 +4172,7 @@ HEDLEY_DIAGNOSTIC_POP
 #  define HEDLEY_INLINE inline
 #elif \
   defined(HEDLEY_GCC_VERSION) || \
-  HEDLEY_ARM_VERSION_CHECK(6,2,0)
+  HEDLEY_ARM_VERSION_CHECK(6, 2, 0)
 #  define HEDLEY_INLINE __inline__
 #elif \
   HEDLEY_MSVC_VERSION_CHECK(12,0,0) || \
@@ -4224,15 +4188,15 @@ HEDLEY_DIAGNOSTIC_POP
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(always_inline) || \
-  HEDLEY_GCC_VERSION_CHECK(4,0,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_SUNPRO_VERSION_CHECK(5,11,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_IBM_VERSION_CHECK(10,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(8,0,0) || \
-  (HEDLEY_TI_VERSION_CHECK(7,3,0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
+  HEDLEY_GCC_VERSION_CHECK(4, 0, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_SUNPRO_VERSION_CHECK(5, 11, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(10, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(8, 0, 0) || \
+  (HEDLEY_TI_VERSION_CHECK(7, 3, 0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
 #  define HEDLEY_ALWAYS_INLINE __attribute__((__always_inline__)) HEDLEY_INLINE
-#elif HEDLEY_MSVC_VERSION_CHECK(12,0,0)
+#elif HEDLEY_MSVC_VERSION_CHECK(12, 0, 0)
 #  define HEDLEY_ALWAYS_INLINE __forceinline
 #elif HEDLEY_TI_VERSION_CHECK(7,0,0) && defined(__cplusplus)
 #  define HEDLEY_ALWAYS_INLINE _Pragma("FUNC_ALWAYS_INLINE;")
@@ -4247,15 +4211,15 @@ HEDLEY_DIAGNOSTIC_POP
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(noinline) || \
-  HEDLEY_GCC_VERSION_CHECK(4,0,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_SUNPRO_VERSION_CHECK(5,11,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_IBM_VERSION_CHECK(10,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(8,0,0) || \
-  (HEDLEY_TI_VERSION_CHECK(7,3,0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
+  HEDLEY_GCC_VERSION_CHECK(4, 0, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_SUNPRO_VERSION_CHECK(5, 11, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(10, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(8, 0, 0) || \
+  (HEDLEY_TI_VERSION_CHECK(7, 3, 0) && defined(__TI_GNU_ATTRIBUTE_SUPPORT__))
 #  define HEDLEY_NEVER_INLINE __attribute__((__noinline__))
-#elif HEDLEY_MSVC_VERSION_CHECK(13,10,0)
+#elif HEDLEY_MSVC_VERSION_CHECK(13, 10, 0)
 #  define HEDLEY_NEVER_INLINE __declspec(noinline)
 #elif HEDLEY_PGI_VERSION_CHECK(10,2,0)
 #  define HEDLEY_NEVER_INLINE _Pragma("noinline")
@@ -4308,12 +4272,12 @@ HEDLEY_DIAGNOSTIC_POP
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(nothrow) || \
-  HEDLEY_GCC_VERSION_CHECK(3,3,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+  HEDLEY_GCC_VERSION_CHECK(3, 3, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_NO_THROW __attribute__((__nothrow__))
 #elif \
-  HEDLEY_MSVC_VERSION_CHECK(13,1,0) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0)
+  HEDLEY_MSVC_VERSION_CHECK(13, 1, 0) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0)
 #  define HEDLEY_NO_THROW __declspec(nothrow)
 #else
 #  define HEDLEY_NO_THROW
@@ -4324,7 +4288,7 @@ HEDLEY_DIAGNOSTIC_POP
 #endif
 #if \
      defined(__cplusplus) && \
-     (!defined(HEDLEY_SUNPRO_VERSION) || HEDLEY_SUNPRO_VERSION_CHECK(5,15,0)) && \
+     (!defined(HEDLEY_SUNPRO_VERSION) || HEDLEY_SUNPRO_VERSION_CHECK(5, 15, 0)) && \
      !defined(HEDLEY_PGI_VERSION)
 #  if \
      (__cplusplus >= 201703L) || \
@@ -4351,7 +4315,7 @@ HEDLEY_DIAGNOSTIC_POP
 #endif
 #if \
   HEDLEY_HAS_ATTRIBUTE(returns_nonnull) || \
-  HEDLEY_GCC_VERSION_CHECK(4,9,0)
+  HEDLEY_GCC_VERSION_CHECK(4, 9, 0)
 #  define HEDLEY_RETURNS_NON_NULL __attribute__((__returns_nonnull__))
 #elif defined(_Ret_notnull_) /* SAL */
 #  define HEDLEY_RETURNS_NON_NULL _Ret_notnull_
@@ -4387,14 +4351,14 @@ HEDLEY_DIAGNOSTIC_POP
 
 #if \
   HEDLEY_HAS_BUILTIN(__builtin_constant_p) || \
-  HEDLEY_GCC_VERSION_CHECK(3,4,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
-  HEDLEY_TINYC_VERSION_CHECK(0,9,19) || \
-  HEDLEY_ARM_VERSION_CHECK(4,1,0) || \
-  HEDLEY_IBM_VERSION_CHECK(13,1,0) || \
-  HEDLEY_TI_VERSION_CHECK(6,1,0) || \
-  HEDLEY_SUNPRO_VERSION_CHECK(5,10,0) || \
-  HEDLEY_CRAY_VERSION_CHECK(8,1,0)
+  HEDLEY_GCC_VERSION_CHECK(3, 4, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
+  HEDLEY_TINYC_VERSION_CHECK(0, 9, 19) || \
+  HEDLEY_ARM_VERSION_CHECK(4, 1, 0) || \
+  HEDLEY_IBM_VERSION_CHECK(13, 1, 0) || \
+  HEDLEY_TI_VERSION_CHECK(6, 1, 0) || \
+  HEDLEY_SUNPRO_VERSION_CHECK(5, 10, 0) || \
+  HEDLEY_CRAY_VERSION_CHECK(8, 1, 0)
 #  define HEDLEY_IS_CONSTANT(expr) __builtin_constant_p(expr)
 #endif
 #if !defined(__cplusplus)
@@ -4477,18 +4441,18 @@ HEDLEY_DIAGNOSTIC_POP
 #  undef HEDLEY_STATIC_ASSERT
 #endif
 #if \
-  !defined(__cplusplus) && ( \
+  !defined(__cplusplus) && (\
       (defined(__STDC_VERSION__) && (__STDC_VERSION__ >= 201112L)) || \
       HEDLEY_HAS_FEATURE(c_static_assert) || \
-      HEDLEY_GCC_VERSION_CHECK(6,0,0) || \
-      HEDLEY_INTEL_VERSION_CHECK(13,0,0) || \
+      HEDLEY_GCC_VERSION_CHECK(6, 0, 0) || \
+      HEDLEY_INTEL_VERSION_CHECK(13, 0, 0) || \
       defined(_Static_assert) \
-    )
+)
 #  define HEDLEY_STATIC_ASSERT(expr, message) _Static_assert(expr, message)
 #elif \
   (defined(__cplusplus) && (__cplusplus >= 201703L)) || \
-  HEDLEY_MSVC_VERSION_CHECK(16,0,0) || \
-  (defined(__cplusplus) && HEDLEY_TI_VERSION_CHECK(8,3,0))
+  HEDLEY_MSVC_VERSION_CHECK(16, 0, 0) || \
+  (defined(__cplusplus) && HEDLEY_TI_VERSION_CHECK(8, 3, 0))
 #  define HEDLEY_STATIC_ASSERT(expr, message) static_assert(expr, message)
 #elif defined(__cplusplus) && (__cplusplus >= 201103L)
 #  define HEDLEY_STATIC_ASSERT(expr, message) static_assert(expr)
@@ -4503,8 +4467,8 @@ HEDLEY_DIAGNOSTIC_POP
 #  define HEDLEY_CONST_CAST(T, expr) (const_cast<T>(expr))
 #elif \
   HEDLEY_HAS_WARNING("-Wcast-qual") || \
-  HEDLEY_GCC_VERSION_CHECK(4,6,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+  HEDLEY_GCC_VERSION_CHECK(4, 6, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_CONST_CAST(T, expr) (__extension__ ({ \
       HEDLEY_DIAGNOSTIC_PUSH \
       HEDLEY_DIAGNOSTIC_DISABLE_CAST_QUAL \
@@ -4552,10 +4516,10 @@ HEDLEY_DIAGNOSTIC_POP
   HEDLEY_PRAGMA(message msg) \
   HEDLEY_DIAGNOSTIC_POP
 #elif \
-  HEDLEY_GCC_VERSION_CHECK(4,4,0) || \
-  HEDLEY_INTEL_VERSION_CHECK(13,0,0)
+  HEDLEY_GCC_VERSION_CHECK(4, 4, 0) || \
+  HEDLEY_INTEL_VERSION_CHECK(13, 0, 0)
 #  define HEDLEY_MESSAGE(msg) HEDLEY_PRAGMA(message msg)
-#elif HEDLEY_CRAY_VERSION_CHECK(5,0,0)
+#elif HEDLEY_CRAY_VERSION_CHECK(5, 0, 0)
 #  define HEDLEY_MESSAGE(msg) HEDLEY_PRAGMA(_CRI message msg)
 #elif HEDLEY_IAR_VERSION_CHECK(8,0,0)
 #  define HEDLEY_MESSAGE(msg) HEDLEY_PRAGMA(message(msg))
@@ -4575,10 +4539,10 @@ HEDLEY_DIAGNOSTIC_POP
   HEDLEY_PRAGMA(clang warning msg) \
   HEDLEY_DIAGNOSTIC_POP
 #elif \
-  HEDLEY_GCC_VERSION_CHECK(4,8,0) || \
-  HEDLEY_PGI_VERSION_CHECK(18,4,0)
+  HEDLEY_GCC_VERSION_CHECK(4, 8, 0) || \
+  HEDLEY_PGI_VERSION_CHECK(18, 4, 0)
 #  define HEDLEY_WARNING(msg) HEDLEY_PRAGMA(GCC warning msg)
-#elif HEDLEY_MSVC_VERSION_CHECK(15,0,0)
+#elif HEDLEY_MSVC_VERSION_CHECK(15, 0, 0)
 #  define HEDLEY_WARNING(msg) HEDLEY_PRAGMA(message(msg))
 #else
 #  define HEDLEY_WARNING(msg) HEDLEY_MESSAGE(msg)
@@ -4616,7 +4580,7 @@ HEDLEY_DIAGNOSTIC_POP
 #if defined(HEDLEY_FLAGS_CAST)
 #  undef HEDLEY_FLAGS_CAST
 #endif
-#if HEDLEY_INTEL_VERSION_CHECK(19,0,0)
+#if HEDLEY_INTEL_VERSION_CHECK(19, 0, 0)
 #  define HEDLEY_FLAGS_CAST(T, expr) (__extension__ ({ \
   HEDLEY_DIAGNOSTIC_PUSH \
       _Pragma("warning(disable:188)") \
@@ -4635,7 +4599,7 @@ HEDLEY_DIAGNOSTIC_POP
 #if defined(__clang__)
 #  define HEDLEY_GCC_NOT_CLANG_VERSION_CHECK(major,minor,patch) (0)
 #else
-#  define HEDLEY_GCC_NOT_CLANG_VERSION_CHECK(major,minor,patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
+#  define HEDLEY_GCC_NOT_CLANG_VERSION_CHECK(major, minor, patch) HEDLEY_GCC_VERSION_CHECK(major,minor,patch)
 #endif
 
 #if defined(HEDLEY_CLANG_HAS_ATTRIBUTE)
@@ -4699,59 +4663,61 @@ namespace csv {
 #define CSV_HAS_CXX17
 #endif
 
-#if CMAKE_CXX_STANDARD >= 14 || __cplusplus >= 	201402L
+#if CMAKE_CXX_STANDARD >= 14 || __cplusplus >= 201402L
 #define CSV_HAS_CXX14
 #endif
 
 #ifdef CSV_HAS_CXX17
+
 #include <string_view>
-     /** @typedef string_view
-      *  The string_view class used by this library.
-      */
+
+    /** @typedef string_view
+     *  The string_view class used by this library.
+     */
     using string_view = std::string_view;
 #else
-     /** @typedef string_view
-      *  The string_view class used by this library.
-      */
-    using string_view = nonstd::string_view;
+    /** @typedef string_view
+     *  The string_view class used by this library.
+     */
+   using string_view = nonstd::string_view;
 #endif
 
 #ifdef CSV_HAS_CXX17
-    #define IF_CONSTEXPR if constexpr
-    #define CONSTEXPR_VALUE constexpr
+#define IF_CONSTEXPR if constexpr
+#define CONSTEXPR_VALUE constexpr
 
-    #define CONSTEXPR_17 constexpr
+#define CONSTEXPR_17 constexpr
 #else
-    #define IF_CONSTEXPR if
-    #define CONSTEXPR_VALUE const
+#define IF_CONSTEXPR if
+#define CONSTEXPR_VALUE const
 
-    #define CONSTEXPR_17 inline
+#define CONSTEXPR_17 inline
 #endif
 
 #ifdef CSV_HAS_CXX14
     template<bool B, class T = void>
     using enable_if_t = std::enable_if_t<B, T>;
 
-    #define CONSTEXPR_14 constexpr
-    #define CONSTEXPR_VALUE_14 constexpr
+#define CONSTEXPR_14 constexpr
+#define CONSTEXPR_VALUE_14 constexpr
 #else
     template<bool B, class T = void>
     using enable_if_t = typename std::enable_if<B, T>::type;
 
-    #define CONSTEXPR_14 inline
-    #define CONSTEXPR_VALUE_14 const
+#define CONSTEXPR_14 inline
+#define CONSTEXPR_VALUE_14 const
 #endif
 
     // Resolves g++ bug with regard to constexpr methods
     // See: https://stackoverflow.com/questions/36489369/constexpr-non-static-member-function-with-non-constexpr-constructor-gcc-clang-d
 #if defined __GNUC__ && !defined __clang__
-    #if (__GNUC__ >= 7 &&__GNUC_MINOR__ >= 2) || (__GNUC__ >= 8)
-        #define CONSTEXPR constexpr
-    #endif
-    #else
-        #ifdef CSV_HAS_CXX17
-        #define CONSTEXPR constexpr
-    #endif
+#if (__GNUC__ >= 7 && __GNUC_MINOR__ >= 2) || (__GNUC__ >= 8)
+#define CONSTEXPR constexpr
+#endif
+#else
+#ifdef CSV_HAS_CXX17
+#define CONSTEXPR constexpr
+#endif
 #endif
 
 #ifndef CONSTEXPR
@@ -4770,6 +4736,7 @@ namespace csv {
 
 // Get operating system specific details
 #if defined(_WIN32)
+
         inline int getpagesize() {
             _SYSTEM_INFO sys_info = {};
             GetSystemInfo(&sys_info);
@@ -4777,7 +4744,7 @@ namespace csv {
         }
 
         const int PAGE_SIZE = getpagesize();
-#elif defined(__linux__) 
+#elif defined(__linux__)
         const int PAGE_SIZE = getpagesize();
 #else
         /** Size of a memory page in bytes. Used by
@@ -4815,7 +4782,7 @@ namespace csv {
         /** Transform the ParseFlags given the context of whether or not the current
          *  field is quote escaped */
         constexpr ParseFlags quote_escape_flag(ParseFlags flag, bool quote_escape) noexcept {
-            return (ParseFlags)((int)flag & ~((int)ParseFlags::QUOTE * quote_escape));
+            return (ParseFlags) ((int) flag & ~((int) ParseFlags::QUOTE * quote_escape));
         }
 
         // Assumed to be true by parsing functions: allows for testing
@@ -4864,15 +4831,19 @@ namespace csv {
         struct ColNames {
         public:
             ColNames() = default;
-            ColNames(const std::vector<std::string>& names) {
+
+            ColNames(const std::vector<std::string> &names) {
                 set_col_names(names);
             }
 
             std::vector<std::string> get_col_names() const;
-            void set_col_names(const std::vector<std::string>&);
+
+            void set_col_names(const std::vector<std::string> &);
+
             int index_of(csv::string_view) const;
 
             bool empty() const noexcept { return this->col_names.empty(); }
+
             size_t size() const noexcept;
 
         private:
@@ -4902,7 +4873,7 @@ namespace csv {
     enum class VariableColumnPolicy {
         THROW = -1,
         IGNORE_ROW = 0,
-        KEEP   = 1
+        KEEP = 1
     };
 
     /** Stores the inferred format of a CSV file. */
@@ -4923,69 +4894,70 @@ namespace csv {
          *
          *  @throws `std::runtime_error` thrown if trim, quote, or possible delimiting characters overlap
          */
-        CSVFormat& delimiter(char delim);
+        CSVFormat &delimiter(char delim);
 
         /** Sets a list of potential delimiters
          *  
          *  @throws `std::runtime_error` thrown if trim, quote, or possible delimiting characters overlap
          *  @param[in] delim An array of possible delimiters to try parsing the CSV with
          */
-        CSVFormat& delimiter(const std::vector<char> & delim);
+        CSVFormat &delimiter(const std::vector<char> &delim);
 
         /** Sets the whitespace characters to be trimmed
          *
          *  @throws `std::runtime_error` thrown if trim, quote, or possible delimiting characters overlap
          *  @param[in] ws An array of whitespace characters that should be trimmed
          */
-        CSVFormat& trim(const std::vector<char> & ws);
+        CSVFormat &trim(const std::vector<char> &ws);
 
         /** Sets the quote character
          *
          *  @throws `std::runtime_error` thrown if trim, quote, or possible delimiting characters overlap
          */
-        CSVFormat& quote(char quote);
+        CSVFormat &quote(char quote);
 
         /** Sets the column names.
          *
          *  @note Unsets any values set by header_row()
          */
-        CSVFormat& column_names(const std::vector<std::string>& names);
+        CSVFormat &column_names(const std::vector<std::string> &names);
 
         /** Sets the header row
          *
          *  @note Unsets any values set by column_names()
          */
-        CSVFormat& header_row(int row);
+        CSVFormat &header_row(int row);
 
         /** Tells the parser that this CSV has no header row
          *
          *  @note Equivalent to `header_row(-1)`
          *
          */
-        CSVFormat& no_header() {
+        CSVFormat &no_header() {
             this->header_row(-1);
             return *this;
         }
 
         /** Turn quoting on or off */
-        CSVFormat& quote(bool use_quote) {
+        CSVFormat &quote(bool use_quote) {
             this->no_quote = !use_quote;
             return *this;
         }
 
         /** Tells the parser how to handle columns of a different length than the others */
-        CONSTEXPR_14 CSVFormat& variable_columns(VariableColumnPolicy policy = VariableColumnPolicy::IGNORE_ROW) {
+        CONSTEXPR_14 CSVFormat &variable_columns(VariableColumnPolicy policy = VariableColumnPolicy::IGNORE_ROW) {
             this->variable_column_policy = policy;
             return *this;
         }
 
         /** Tells the parser how to handle columns of a different length than the others */
-        CONSTEXPR_14 CSVFormat& variable_columns(bool policy) {
-            this->variable_column_policy = (VariableColumnPolicy)policy;
+        CONSTEXPR_14 CSVFormat &variable_columns(bool policy) {
+            this->variable_column_policy = (VariableColumnPolicy) policy;
             return *this;
         }
 
-        #ifndef DOXYGEN_SHOULD_SKIP_THIS
+#ifndef DOXYGEN_SHOULD_SKIP_THIS
+
         char get_delim() const {
             // This error should never be received by end users.
             if (this->possible_delimiters.size() > 1) {
@@ -4996,19 +4968,25 @@ namespace csv {
         }
 
         CONSTEXPR bool is_quoting_enabled() const { return !this->no_quote; }
+
         CONSTEXPR char get_quote_char() const { return this->quote_char; }
+
         CONSTEXPR int get_header() const { return this->header; }
+
         std::vector<char> get_possible_delims() const { return this->possible_delimiters; }
+
         std::vector<char> get_trim_chars() const { return this->trim_chars; }
+
         CONSTEXPR VariableColumnPolicy get_variable_column_policy() const { return this->variable_column_policy; }
-        #endif
-        
+
+#endif
+
         /** CSVFormat for guessing the delimiter */
         CSV_INLINE static CSVFormat guess_csv() {
             CSVFormat format;
-            format.delimiter({ ',', '|', '\t', ';', '^' })
-                .quote('"')
-                .header_row(0);
+            format.delimiter({',', '|', '\t', ';', '^'})
+                    .quote('"')
+                    .header_row(0);
 
             return format;
         }
@@ -5019,13 +4997,13 @@ namespace csv {
 
         friend CSVReader;
         friend internals::IBasicCSVParser;
-        
+
     private:
         /**< Throws an error if delimiters and trim characters overlap */
         void assert_no_char_overlap();
 
         /**< Set of possible delimiters */
-        std::vector<char> possible_delimiters = { ',' };
+        std::vector<char> possible_delimiters = {','};
 
         /**< Set of whitespace characters to trim */
         std::vector<char> trim_chars = {};
@@ -5089,20 +5067,22 @@ namespace csv {
     };
 
     static_assert(DataType::CSV_STRING < DataType::CSV_INT8, "String type should come before numeric types.");
-    static_assert(DataType::CSV_INT8 < DataType::CSV_INT64, "Smaller integer types should come before larger integer types.");
-    static_assert(DataType::CSV_INT64 < DataType::CSV_DOUBLE, "Integer types should come before floating point value types.");
+    static_assert(DataType::CSV_INT8 < DataType::CSV_INT64,
+                  "Smaller integer types should come before larger integer types.");
+    static_assert(DataType::CSV_INT64 < DataType::CSV_DOUBLE,
+                  "Integer types should come before floating point value types.");
 
     namespace internals {
         /** Compute 10 to the power of n */
         template<typename T>
         HEDLEY_CONST CONSTEXPR_14
-        long double pow10(const T& n) noexcept {
+        long double pow10(const T &n) noexcept {
             long double multiplicand = n > 0 ? 10 : 0.1,
-                ret = 1;
+                    ret = 1;
 
             // Make all numbers positive
             T iterations = n > 0 ? n : -n;
-            
+
             for (T i = 0; i < iterations; i++) {
                 ret *= multiplicand;
             }
@@ -5113,9 +5093,9 @@ namespace csv {
         /** Compute 10 to the power of n */
         template<>
         HEDLEY_CONST CONSTEXPR_14
-        long double pow10(const unsigned& n) noexcept {
+        long double pow10(const unsigned &n) noexcept {
             long double multiplicand = n > 0 ? 10 : 0.1,
-                ret = 1;
+                    ret = 1;
 
             for (unsigned i = 0; i < n; i++) {
                 ret *= multiplicand;
@@ -5127,14 +5107,14 @@ namespace csv {
 #ifndef DOXYGEN_SHOULD_SKIP_THIS
         /** Private site-indexed array mapping byte sizes to an integer size enum */
         constexpr DataType int_type_arr[8] = {
-            DataType::CSV_INT8,  // 1
-            DataType::CSV_INT16, // 2
-            DataType::UNKNOWN,
-            DataType::CSV_INT32, // 4
-            DataType::UNKNOWN,
-            DataType::UNKNOWN,
-            DataType::UNKNOWN,
-            DataType::CSV_INT64  // 8
+                DataType::CSV_INT8,  // 1
+                DataType::CSV_INT16, // 2
+                DataType::UNKNOWN,
+                DataType::CSV_INT32, // 4
+                DataType::UNKNOWN,
+                DataType::UNKNOWN,
+                DataType::UNKNOWN,
+                DataType::CSV_INT64  // 8
         };
 
         template<typename T>
@@ -5144,13 +5124,23 @@ namespace csv {
             return int_type_arr[sizeof(T) - 1];
         }
 
-        template<> inline DataType type_num<float>() { return DataType::CSV_DOUBLE; }
-        template<> inline DataType type_num<double>() { return DataType::CSV_DOUBLE; }
-        template<> inline DataType type_num<long double>() { return DataType::CSV_DOUBLE; }
-        template<> inline DataType type_num<std::nullptr_t>() { return DataType::CSV_NULL; }
-        template<> inline DataType type_num<std::string>() { return DataType::CSV_STRING; }
+        template<>
+        inline DataType type_num<float>() { return DataType::CSV_DOUBLE; }
 
-        CONSTEXPR_14 DataType data_type(csv::string_view in, long double* const out = nullptr);
+        template<>
+        inline DataType type_num<double>() { return DataType::CSV_DOUBLE; }
+
+        template<>
+        inline DataType type_num<long double>() { return DataType::CSV_DOUBLE; }
+
+        template<>
+        inline DataType type_num<std::nullptr_t>() { return DataType::CSV_NULL; }
+
+        template<>
+        inline DataType type_num<std::string>() { return DataType::CSV_STRING; }
+
+        CONSTEXPR_14 DataType data_type(csv::string_view in, long double *const out = nullptr);
+
 #endif
 
         /** Given a byte size, return the largest number than can be stored in
@@ -5162,26 +5152,26 @@ namespace csv {
         template<size_t Bytes>
         CONSTEXPR_14 long double get_int_max() {
             static_assert(Bytes == 1 || Bytes == 2 || Bytes == 4 || Bytes == 8,
-                "Bytes must be a power of 2 below 8.");
+                          "Bytes must be a power of 2 below 8.");
 
             IF_CONSTEXPR (sizeof(signed char) == Bytes) {
-                return (long double)std::numeric_limits<signed char>::max();
+                return (long double) std::numeric_limits<signed char>::max();
             }
 
             IF_CONSTEXPR (sizeof(short) == Bytes) {
-                return (long double)std::numeric_limits<short>::max();
+                return (long double) std::numeric_limits<short>::max();
             }
 
             IF_CONSTEXPR (sizeof(int) == Bytes) {
-                return (long double)std::numeric_limits<int>::max();
+                return (long double) std::numeric_limits<int>::max();
             }
 
             IF_CONSTEXPR (sizeof(long int) == Bytes) {
-                return (long double)std::numeric_limits<long int>::max();
+                return (long double) std::numeric_limits<long int>::max();
             }
 
             IF_CONSTEXPR (sizeof(long long int) == Bytes) {
-                return (long double)std::numeric_limits<long long int>::max();
+                return (long double) std::numeric_limits<long long int>::max();
             }
 
             HEDLEY_UNREACHABLE();
@@ -5193,26 +5183,26 @@ namespace csv {
         template<size_t Bytes>
         CONSTEXPR_14 long double get_uint_max() {
             static_assert(Bytes == 1 || Bytes == 2 || Bytes == 4 || Bytes == 8,
-                "Bytes must be a power of 2 below 8.");
+                          "Bytes must be a power of 2 below 8.");
 
             IF_CONSTEXPR(sizeof(unsigned char) == Bytes) {
-                return (long double)std::numeric_limits<unsigned char>::max();
+                return (long double) std::numeric_limits<unsigned char>::max();
             }
 
             IF_CONSTEXPR(sizeof(unsigned short) == Bytes) {
-                return (long double)std::numeric_limits<unsigned short>::max();
+                return (long double) std::numeric_limits<unsigned short>::max();
             }
 
             IF_CONSTEXPR(sizeof(unsigned int) == Bytes) {
-                return (long double)std::numeric_limits<unsigned int>::max();
+                return (long double) std::numeric_limits<unsigned int>::max();
             }
 
             IF_CONSTEXPR(sizeof(unsigned long int) == Bytes) {
-                return (long double)std::numeric_limits<unsigned long int>::max();
+                return (long double) std::numeric_limits<unsigned long int>::max();
             }
 
             IF_CONSTEXPR(sizeof(unsigned long long int) == Bytes) {
-                return (long double)std::numeric_limits<unsigned long long int>::max();
+                return (long double) std::numeric_limits<unsigned long long int>::max();
             }
 
             HEDLEY_UNREACHABLE();
@@ -5248,9 +5238,9 @@ namespace csv {
          */
         HEDLEY_PRIVATE CONSTEXPR_14
         DataType _process_potential_exponential(
-            csv::string_view exponential_part,
-            const long double& coeff,
-            long double * const out) {
+                csv::string_view exponential_part,
+                const long double &coeff,
+                long double *const out) {
             long double exponent = 0;
             auto result = data_type(exponential_part, &exponent);
 
@@ -5267,7 +5257,7 @@ namespace csv {
          *  it fits in
          */
         HEDLEY_PRIVATE HEDLEY_PURE CONSTEXPR_14
-        DataType _determine_integral_type(const long double& number) noexcept {
+        DataType _determine_integral_type(const long double &number) noexcept {
             // We can assume number is always non-negative
             assert(number >= 0);
 
@@ -5295,95 +5285,93 @@ namespace csv {
          *                  get stored
          */
         CONSTEXPR_14
-        DataType data_type(csv::string_view in, long double* const out) {
+        DataType data_type(csv::string_view in, long double *const out) {
             // Empty string --> NULL
             if (in.size() == 0)
                 return DataType::CSV_NULL;
 
             bool ws_allowed = true,
-                neg_allowed = true,
-                dot_allowed = true,
-                digit_allowed = true,
-                has_digit = false,
-                prob_float = false;
+                    neg_allowed = true,
+                    dot_allowed = true,
+                    digit_allowed = true,
+                    has_digit = false,
+                    prob_float = false;
 
             unsigned places_after_decimal = 0;
             long double integral_part = 0,
-                decimal_part = 0;
+                    decimal_part = 0;
 
             for (size_t i = 0, ilen = in.size(); i < ilen; i++) {
-                const char& current = in[i];
+                const char &current = in[i];
 
                 switch (current) {
-                case ' ':
-                    if (!ws_allowed) {
-                        if (isdigit(in[i - 1])) {
-                            digit_allowed = false;
-                            ws_allowed = true;
+                    case ' ':
+                        if (!ws_allowed) {
+                            if (isdigit(in[i - 1])) {
+                                digit_allowed = false;
+                                ws_allowed = true;
+                            } else {
+                                // Ex: '510 123 4567'
+                                return DataType::CSV_STRING;
+                            }
                         }
-                        else {
-                            // Ex: '510 123 4567'
+                        break;
+                    case '-':
+                        if (!neg_allowed) {
+                            // Ex: '510-123-4567'
                             return DataType::CSV_STRING;
                         }
-                    }
-                    break;
-                case '-':
-                    if (!neg_allowed) {
-                        // Ex: '510-123-4567'
-                        return DataType::CSV_STRING;
-                    }
 
-                    neg_allowed = false;
-                    break;
-                case '.':
-                    if (!dot_allowed) {
-                        return DataType::CSV_STRING;
-                    }
+                        neg_allowed = false;
+                        break;
+                    case '.':
+                        if (!dot_allowed) {
+                            return DataType::CSV_STRING;
+                        }
 
-                    dot_allowed = false;
-                    prob_float = true;
-                    break;
-                case 'e':
-                case 'E':
-                    // Process scientific notation
-                    if (prob_float || (i && i + 1 < ilen && isdigit(in[i - 1]))) {
-                        size_t exponent_start_idx = i + 1;
+                        dot_allowed = false;
                         prob_float = true;
+                        break;
+                    case 'e':
+                    case 'E':
+                        // Process scientific notation
+                        if (prob_float || (i && i + 1 < ilen && isdigit(in[i - 1]))) {
+                            size_t exponent_start_idx = i + 1;
+                            prob_float = true;
 
-                        // Strip out plus sign
-                        if (in[i + 1] == '+') {
-                            exponent_start_idx++;
+                            // Strip out plus sign
+                            if (in[i + 1] == '+') {
+                                exponent_start_idx++;
+                            }
+
+                            return _process_potential_exponential(
+                                    in.substr(exponent_start_idx),
+                                    neg_allowed ? integral_part + decimal_part : -(integral_part + decimal_part),
+                                    out
+                            );
                         }
 
-                        return _process_potential_exponential(
-                            in.substr(exponent_start_idx),
-                            neg_allowed ? integral_part + decimal_part : -(integral_part + decimal_part),
-                            out
-                        );
-                    }
-
-                    return DataType::CSV_STRING;
-                    break;
-                default:
-                    short digit = static_cast<short>(current - '0');
-                    if (digit >= 0 && digit <= 9) {
-                        // Process digit
-                        has_digit = true;
-
-                        if (!digit_allowed)
-                            return DataType::CSV_STRING;
-                        else if (ws_allowed) // Ex: '510 456'
-                            ws_allowed = false;
-
-                        // Build current number
-                        if (prob_float)
-                            decimal_part += digit / pow10(++places_after_decimal);
-                        else
-                            integral_part = (integral_part * 10) + digit;
-                    }
-                    else {
                         return DataType::CSV_STRING;
-                    }
+                        break;
+                    default:
+                        short digit = static_cast<short>(current - '0');
+                        if (digit >= 0 && digit <= 9) {
+                            // Process digit
+                            has_digit = true;
+
+                            if (!digit_allowed)
+                                return DataType::CSV_STRING;
+                            else if (ws_allowed) // Ex: '510 456'
+                                ws_allowed = false;
+
+                            // Build current number
+                            if (prob_float)
+                                decimal_part += digit / pow10(++places_after_decimal);
+                            else
+                                integral_part = (integral_part * 10) + digit;
+                        } else {
+                            return DataType::CSV_STRING;
+                        }
                 }
             }
 
@@ -5410,14 +5398,15 @@ namespace csv {
         static const std::string ERROR_NAN = "Not a number.";
         static const std::string ERROR_OVERFLOW = "Overflow error.";
         static const std::string ERROR_FLOAT_TO_INT =
-            "Attempted to convert a floating point value to an integral type.";
+                "Attempted to convert a floating point value to an integral type.";
         static const std::string ERROR_NEG_TO_UNSIGNED = "Negative numbers cannot be converted to unsigned types.";
-    
+
         std::string json_escape_string(csv::string_view s) noexcept;
 
         /** A barebones class used for describing CSV fields */
         struct RawCSVField {
             RawCSVField() = default;
+
             RawCSVField(size_t _start, size_t _length, bool _double_quote = false) {
                 start = _start;
                 length = _length;
@@ -5428,7 +5417,7 @@ namespace csv {
             size_t start;
 
             /** The length of the row, ignoring quote escape characters */
-            size_t length; 
+            size_t length;
 
             /** Whether or not the field contains an escaped quote */
             bool has_double_quote;
@@ -5448,29 +5437,29 @@ namespace csv {
         class CSVFieldList {
         public:
             /** Construct a CSVFieldList which allocates blocks of a certain size */
-            CSVFieldList(size_t single_buffer_capacity = (size_t)(internals::PAGE_SIZE / sizeof(RawCSVField))) :
-                _single_buffer_capacity(single_buffer_capacity) {
+            CSVFieldList(size_t single_buffer_capacity = (size_t) (internals::PAGE_SIZE / sizeof(RawCSVField))) :
+                    _single_buffer_capacity(single_buffer_capacity) {
                 this->allocate();
             }
 
             // No copy constructor
-            CSVFieldList(const CSVFieldList& other) = delete;
+            CSVFieldList(const CSVFieldList &other) = delete;
 
             // CSVFieldArrays may be moved
-            CSVFieldList(CSVFieldList&& other) :
-                _single_buffer_capacity(other._single_buffer_capacity) {
+            CSVFieldList(CSVFieldList &&other) :
+                    _single_buffer_capacity(other._single_buffer_capacity) {
                 buffers = std::move(other.buffers);
                 _current_buffer_size = other._current_buffer_size;
                 _back = other._back;
             }
 
             ~CSVFieldList() {
-                for (auto& buffer : buffers)
+                for (auto &buffer: buffers)
                     delete[] buffer;
             }
 
-            template <class... Args>
-            void emplace_back(Args&&... args) {
+            template<class... Args>
+            void emplace_back(Args &&... args) {
                 if (this->_current_buffer_size == this->_single_buffer_capacity) {
                     this->allocate();
                 }
@@ -5483,18 +5472,18 @@ namespace csv {
                 return this->_current_buffer_size + ((this->buffers.size() - 1) * this->_single_buffer_capacity);
             }
 
-            RawCSVField& operator[](size_t n) const;
+            RawCSVField &operator[](size_t n) const;
 
         private:
             const size_t _single_buffer_capacity;
 
-            std::vector<RawCSVField*> buffers = {};
+            std::vector<RawCSVField *> buffers = {};
 
             /** Number of items in the current buffer */
             size_t _current_buffer_size = 0;
 
             /** Pointer to the current empty field */
-            RawCSVField* _back = nullptr;
+            RawCSVField *_back = nullptr;
 
             /** Allocate a new page of memory */
             void allocate();
@@ -5529,7 +5518,7 @@ namespace csv {
     class CSVField {
     public:
         /** Constructs a CSVField from a string_view */
-        constexpr explicit CSVField(csv::string_view _sv) noexcept : sv(_sv) { };
+        constexpr explicit CSVField(csv::string_view _sv) noexcept: sv(_sv) {};
 
         operator std::string() const {
             return std::string("<CSVField> ") + std::string(this->sv);
@@ -5563,7 +5552,8 @@ namespace csv {
         *           numeric value.
         *
         */
-        template<typename T = std::string> T get() {
+        template<typename T = std::string>
+        T get() {
             IF_CONSTEXPR(std::is_arithmetic<T>::value) {
                 // Note: this->type() also converts the CSV value to float
                 if (this->type() <= DataType::CSV_STRING) {
@@ -5591,8 +5581,7 @@ namespace csv {
                     if (this->value > internals::get_uint_max<sizeof(T)>()) {
                         throw std::runtime_error(internals::ERROR_OVERFLOW);
                     }
-                }
-                else if (internals::type_num<T>() < this->_type) {
+                } else if (internals::type_num<T>() < this->_type) {
                     throw std::runtime_error(internals::ERROR_OVERFLOW);
                 }
             }
@@ -5601,7 +5590,7 @@ namespace csv {
         }
 
         /** Parse a hexadecimal value, returning false if the value is not hex. */
-        bool try_parse_hex(int& parsedValue);
+        bool try_parse_hex(int &parsedValue);
 
         /** Compares the contents of this field to a numeric value. If this
          *  field does not contain a numeric value, then all comparisons return
@@ -5617,10 +5606,9 @@ namespace csv {
          *  @sa      csv::CSVField::operator==(csv::string_view other)
          */
         template<typename T>
-        CONSTEXPR_14 bool operator==(T other) const noexcept
-        {
+        CONSTEXPR_14 bool operator==(T other) const noexcept {
             static_assert(std::is_arithmetic<T>::value,
-                "T should be a numeric value.");
+                          "T should be a numeric value.");
 
             if (this->_type != DataType::UNKNOWN) {
                 if (this->_type == DataType::CSV_STRING) {
@@ -5672,7 +5660,7 @@ namespace csv {
             /* Check to see if value has been cached previously, if not
              * evaluate it
              */
-            if ((int)_type < 0) {
+            if ((int) _type < 0) {
                 this->_type = internals::data_type(this->sv, &this->value);
             }
         }
@@ -5684,11 +5672,12 @@ namespace csv {
         friend internals::IBasicCSVParser;
 
         CSVRow() = default;
-        
+
         /** Construct a CSVRow from a RawCSVDataPtr */
         CSVRow(internals::RawCSVDataPtr _data) : data(_data) {}
+
         CSVRow(internals::RawCSVDataPtr _data, size_t _data_start, size_t _field_bounds)
-            : data(_data), data_start(_data_start), fields_start(_field_bounds) {}
+                : data(_data), data_start(_data_start), fields_start(_field_bounds) {}
 
         /** Indicates whether row is empty or not */
         CONSTEXPR bool empty() const noexcept { return this->size() == 0; }
@@ -5699,9 +5688,12 @@ namespace csv {
         /** @name Value Retrieval */
         ///@{
         CSVField operator[](size_t n) const;
-        CSVField operator[](const std::string&) const;
-        std::string to_json(const std::vector<std::string>& subset = {}) const;
-        std::string to_json_array(const std::vector<std::string>& subset = {}) const;
+
+        CSVField operator[](const std::string &) const;
+
+        std::string to_json(const std::vector<std::string> &subset = {}) const;
+
+        std::string to_json_array(const std::vector<std::string> &subset = {}) const;
 
         /** Retrieve this row's associated column names */
         std::vector<std::string> get_col_names() const {
@@ -5729,37 +5721,44 @@ namespace csv {
 #ifdef _MSC_BUILD
             using pointer = std::shared_ptr<CSVField>;
 #else
-            using pointer = CSVField * ;
+            using pointer = CSVField *;
 #endif
 
-            using reference = CSVField & ;
+            using reference = CSVField &;
             using iterator_category = std::random_access_iterator_tag;
 #endif
-            iterator(const CSVRow*, int i);
+
+            iterator(const CSVRow *, int i);
 
             reference operator*() const;
+
             pointer operator->() const;
 
             iterator operator++(int);
-            iterator& operator++();
+
+            iterator &operator++();
+
             iterator operator--(int);
-            iterator& operator--();
+
+            iterator &operator--();
+
             iterator operator+(difference_type n) const;
+
             iterator operator-(difference_type n) const;
 
             /** Two iterators are equal if they point to the same field */
-            CONSTEXPR bool operator==(const iterator& other) const noexcept {
+            CONSTEXPR bool operator==(const iterator &other) const noexcept {
                 return this->i == other.i;
             };
 
-            CONSTEXPR bool operator!=(const iterator& other) const noexcept { return !operator==(other); }
+            CONSTEXPR bool operator!=(const iterator &other) const noexcept { return !operator==(other); }
 
 #ifndef NDEBUG
             friend CSVRow;
 #endif
 
         private:
-            const CSVRow * daddy = nullptr;            // Pointer to parent
+            const CSVRow *daddy = nullptr;            // Pointer to parent
             std::shared_ptr<CSVField> field = nullptr; // Current field pointed at
             int i = 0;                                 // Index of current field
         };
@@ -5770,10 +5769,13 @@ namespace csv {
         /** @name Iterators
          *  @brief Each iterator points to a CSVField object.
          */
-         ///@{
+        ///@{
         iterator begin() const;
+
         iterator end() const noexcept;
+
         reverse_iterator rbegin() const noexcept;
+
         reverse_iterator rend() const;
         ///@}
 
@@ -5796,6 +5798,7 @@ namespace csv {
 #ifdef _MSC_VER
 #pragma region CSVField::get Specializations
 #endif
+
     /** Retrieve this field's original string */
     template<>
     inline std::string CSVField::get<std::string>() {
@@ -5820,26 +5823,25 @@ namespace csv {
 
         return this->value;
     }
+
 #ifdef _MSC_VER
 #pragma endregion CSVField::get Specializations
 #endif
 
     /** Compares the contents of this field to a string */
     template<>
-    CONSTEXPR bool CSVField::operator==(const char * other) const noexcept
-    {
+    CONSTEXPR bool CSVField::operator==(const char *other) const noexcept {
         return this->sv == other;
     }
 
     /** Compares the contents of this field to a string */
     template<>
-    CONSTEXPR bool CSVField::operator==(csv::string_view other) const noexcept
-    {
+    CONSTEXPR bool CSVField::operator==(csv::string_view other) const noexcept {
         return this->sv == other;
     }
 }
 
-inline std::ostream& operator << (std::ostream& os, csv::CSVField const& value) {
+inline std::ostream &operator<<(std::ostream &os, csv::CSVField const &value) {
     os << std::string(value);
     return os;
 }
@@ -5874,7 +5876,7 @@ namespace csv {
          */
         HEDLEY_CONST CONSTEXPR_17 ParseFlagMap make_parse_flags(char delimiter, char quote_char) {
             std::array<ParseFlags, 256> ret = make_parse_flags(delimiter);
-            ret[(size_t)quote_char + 128] = ParseFlags::QUOTE;
+            ret[(size_t) quote_char + 128] = ParseFlags::QUOTE;
             return ret;
         }
 
@@ -5882,7 +5884,7 @@ namespace csv {
          *  ASCII number for a character c and, v[i + 128] is true if
          *  c is a whitespace character
          */
-        HEDLEY_CONST CONSTEXPR_17 WhitespaceMap make_ws_flags(const char* ws_chars, size_t n_chars) {
+        HEDLEY_CONST CONSTEXPR_17 WhitespaceMap make_ws_flags(const char *ws_chars, size_t n_chars) {
             std::array<bool, 256> ret = {};
             for (int i = -128; i < 128; i++) {
                 const int arr_idx = i + 128;
@@ -5899,7 +5901,7 @@ namespace csv {
             return ret;
         }
 
-        inline WhitespaceMap make_ws_flags(const std::vector<char>& flags) {
+        inline WhitespaceMap make_ws_flags(const std::vector<char> &flags) {
             return make_ws_flags(flags.data(), flags.size());
         }
 
@@ -5918,12 +5920,13 @@ namespace csv {
         class ThreadSafeDeque {
         public:
             ThreadSafeDeque(size_t notify_size = 100) : _notify_size(notify_size) {};
-            ThreadSafeDeque(const ThreadSafeDeque& other) {
+
+            ThreadSafeDeque(const ThreadSafeDeque &other) {
                 this->data = other.data;
                 this->_notify_size = other._notify_size;
             }
 
-            ThreadSafeDeque(const std::deque<T>& source) : ThreadSafeDeque() {
+            ThreadSafeDeque(const std::deque<T> &source) : ThreadSafeDeque() {
                 this->data = source;
             }
 
@@ -5933,16 +5936,16 @@ namespace csv {
                 return this->data.empty();
             }
 
-            T& front() noexcept {
+            T &front() noexcept {
                 return this->data.front();
             }
 
-            T& operator[](size_t n) {
+            T &operator[](size_t n) {
                 return this->data[n];
             }
 
-            void push_back(T&& item) {
-                std::lock_guard<std::mutex> lock{ this->_lock };
+            void push_back(T &&item) {
+                std::lock_guard<std::mutex> lock{this->_lock};
                 this->data.push_back(std::move(item));
 
                 if (this->size() >= _notify_size) {
@@ -5951,7 +5954,7 @@ namespace csv {
             }
 
             T pop_front() noexcept {
-                std::lock_guard<std::mutex> lock{ this->_lock };
+                std::lock_guard<std::mutex> lock{this->_lock};
                 T item = std::move(data.front());
                 data.pop_front();
                 return item;
@@ -5968,7 +5971,7 @@ namespace csv {
                     return;
                 }
 
-                std::unique_lock<std::mutex> lock{ this->_lock };
+                std::unique_lock<std::mutex> lock{this->_lock};
                 this->_cond.wait(lock, [this] { return this->size() >= _notify_size || !this->is_waitable(); });
                 lock.unlock();
             }
@@ -5983,14 +5986,14 @@ namespace csv {
 
             /** Tell listeners that this deque is actively being pushed to */
             void notify_all() {
-                std::unique_lock<std::mutex> lock{ this->_lock };
+                std::unique_lock<std::mutex> lock{this->_lock};
                 this->_is_waitable = true;
                 this->_cond.notify_all();
             }
 
             /** Tell all listeners to stop */
             void kill_all() {
-                std::unique_lock<std::mutex> lock{ this->_lock };
+                std::unique_lock<std::mutex> lock{this->_lock};
                 this->_is_waitable = false;
                 this->_cond.notify_all();
             }
@@ -6019,8 +6022,10 @@ namespace csv {
         class IBasicCSVParser {
         public:
             IBasicCSVParser() = default;
-            IBasicCSVParser(const CSVFormat&, const ColNamesPtr&);
-            IBasicCSVParser(const ParseFlagMap& parse_flags, const WhitespaceMap& ws_flags
+
+            IBasicCSVParser(const CSVFormat &, const ColNamesPtr &);
+
+            IBasicCSVParser(const ParseFlagMap &parse_flags, const WhitespaceMap &ws_flags
             ) : _parse_flags(parse_flags), _ws_flags(ws_flags) {};
 
             virtual ~IBasicCSVParser() {}
@@ -6045,7 +6050,7 @@ namespace csv {
             /** Whether or not this CSV has a UTF-8 byte order mark */
             CONSTEXPR bool utf8_bom() const { return this->_utf8_bom; }
 
-            void set_output(RowCollection& rows) { this->_records = &rows; }
+            void set_output(RowCollection &rows) { this->_records = &rows; }
 
         protected:
             /** @name Current Parser State */
@@ -6053,7 +6058,7 @@ namespace csv {
             CSVRow current_row;
             RawCSVDataPtr data_ptr = nullptr;
             ColNamesPtr _col_names = nullptr;
-            CSVFieldList* fields = nullptr;
+            CSVFieldList *fields = nullptr;
             int field_start = UNINITIALIZED_FIELD;
             size_t field_length = 0;
 
@@ -6080,6 +6085,7 @@ namespace csv {
 
             /** Create a new RawCSVDataPtr for a new chunk of data */
             void reset_data_ptr();
+
         private:
             /** An array where the (i + 128)th slot determines whether ASCII character i should
              *  be trimmed
@@ -6096,13 +6102,13 @@ namespace csv {
             bool _utf8_bom = false;
 
             /** Where complete rows should be pushed to */
-            RowCollection* _records = nullptr;
+            RowCollection *_records = nullptr;
 
             CONSTEXPR_17 bool ws_flag(const char ch) const noexcept {
                 return _ws_flags.data()[ch + 128];
             }
 
-            size_t& current_row_start() {
+            size_t &current_row_start() {
                 return this->current_row.data_start;
             }
 
@@ -6122,22 +6128,21 @@ namespace csv {
          *  or an `std::ifstream`
          */
         template<typename TStream>
-        class StreamParser: public IBasicCSVParser {
+        class StreamParser : public IBasicCSVParser {
             using RowCollection = ThreadSafeDeque<CSVRow>;
 
         public:
-            StreamParser(TStream& source,
-                const CSVFormat& format,
-                const ColNamesPtr& col_names = nullptr
+            StreamParser(TStream &source,
+                         const CSVFormat &format,
+                         const ColNamesPtr &col_names = nullptr
             ) : IBasicCSVParser(format, col_names), _source(std::move(source)) {};
 
             StreamParser(
-                TStream& source,
-                internals::ParseFlagMap parse_flags,
-                internals::WhitespaceMap ws_flags) :
-                IBasicCSVParser(parse_flags, ws_flags),
-                _source(std::move(source))
-            {};
+                    TStream &source,
+                    internals::ParseFlagMap parse_flags,
+                    internals::WhitespaceMap ws_flags) :
+                    IBasicCSVParser(parse_flags, ws_flags),
+                    _source(std::move(source)) {};
 
             ~StreamParser() {}
 
@@ -6162,10 +6167,10 @@ namespace csv {
                 _source.seekg(stream_pos, std::ios::beg);
                 _source.read(buff.get(), length);
                 stream_pos = _source.tellg();
-                ((std::string*)(this->data_ptr->_data.get()))->assign(buff.get(), length);
+                ((std::string *) (this->data_ptr->_data.get()))->assign(buff.get(), length);
 
                 // Create string_view
-                this->data_ptr->data = *((std::string*)this->data_ptr->_data.get());
+                this->data_ptr->data = *((std::string *) this->data_ptr->_data.get());
 
                 // Parse
                 this->current_row = CSVRow(this->data_ptr);
@@ -6174,8 +6179,7 @@ namespace csv {
                 if (stream_pos == source_size || no_chunk()) {
                     this->_eof = true;
                     this->end_feed();
-                }
-                else {
+                } else {
                     this->stream_pos -= (length - remainder);
                 }
             }
@@ -6197,8 +6201,8 @@ namespace csv {
         class MmapParser : public IBasicCSVParser {
         public:
             MmapParser(csv::string_view filename,
-                const CSVFormat& format,
-                const ColNamesPtr& col_names = nullptr
+                       const CSVFormat &format,
+                       const ColNamesPtr &col_names = nullptr
             ) : IBasicCSVParser(format, col_names) {
                 this->_filename = filename.data();
                 this->source_size = get_file_size(filename);
@@ -6220,9 +6224,9 @@ namespace csv {
 namespace csv {
     /** Stuff that is generally not of interest to end-users */
     namespace internals {
-        std::string format_row(const std::vector<std::string>& row, csv::string_view delim = ", ");
+        std::string format_row(const std::vector<std::string> &row, csv::string_view delim = ", ");
 
-        std::vector<std::string> _get_col_names( csv::string_view head, const CSVFormat format = CSVFormat::guess_csv());
+        std::vector<std::string> _get_col_names(csv::string_view head, const CSVFormat format = CSVFormat::guess_csv());
 
         struct GuessScore {
             double score;
@@ -6231,16 +6235,17 @@ namespace csv {
 
         CSV_INLINE GuessScore calculate_score(csv::string_view head, CSVFormat format);
 
-        CSVGuessResult _guess_format(csv::string_view head, const std::vector<char>& delims = { ',', '|', '\t', ';', '^', '~' });
+        CSVGuessResult
+        _guess_format(csv::string_view head, const std::vector<char> &delims = {',', '|', '\t', ';', '^', '~'});
     }
 
     std::vector<std::string> get_col_names(
-        csv::string_view filename,
-        const CSVFormat format = CSVFormat::guess_csv());
+            csv::string_view filename,
+            const CSVFormat format = CSVFormat::guess_csv());
 
     /** Guess the delimiter used by a delimiter-separated values file */
     CSVGuessResult guess_format(csv::string_view filename,
-        const std::vector<char>& delims = { ',', '|', '\t', ';', '^', '~' });
+                                const std::vector<char> &delims = {',', '|', '\t', ';', '^', '~'});
 
     /** @class CSVReader
      *  @brief Main class for parsing CSVs from files and in-memory sources
@@ -6263,17 +6268,19 @@ namespace csv {
          */
         class iterator {
         public:
-            #ifndef DOXYGEN_SHOULD_SKIP_THIS
+#ifndef DOXYGEN_SHOULD_SKIP_THIS
             using value_type = CSVRow;
             using difference_type = std::ptrdiff_t;
-            using pointer = CSVRow * ;
-            using reference = CSVRow & ;
+            using pointer = CSVRow *;
+            using reference = CSVRow &;
             using iterator_category = std::input_iterator_tag;
-            #endif
+#endif
 
             iterator() = default;
-            iterator(CSVReader* reader) : daddy(reader) {};
-            iterator(CSVReader*, CSVRow&&);
+
+            iterator(CSVReader *reader) : daddy(reader) {};
+
+            iterator(CSVReader *, CSVRow &&);
 
             /** Access the CSVRow held by the iterator */
             CONSTEXPR_14 reference operator*() { return this->row; }
@@ -6281,20 +6288,21 @@ namespace csv {
             /** Return a pointer to the CSVRow the iterator has stopped at */
             CONSTEXPR_14 pointer operator->() { return &(this->row); }
 
-            iterator& operator++();   /**< Pre-increment iterator */
+            iterator &operator++();   /**< Pre-increment iterator */
             iterator operator++(int); /**< Post-increment ierator */
-            iterator& operator--();
+            iterator &operator--();
 
             /** Returns true if iterators were constructed from the same CSVReader
              *  and point to the same row
              */
-            CONSTEXPR bool operator==(const iterator& other) const noexcept {
+            CONSTEXPR bool operator==(const iterator &other) const noexcept {
                 return (this->daddy == other.daddy) && (this->i == other.i);
             }
 
-            CONSTEXPR bool operator!=(const iterator& other) const noexcept { return !operator==(other); }
+            CONSTEXPR bool operator!=(const iterator &other) const noexcept { return !operator==(other); }
+
         private:
-            CSVReader * daddy = nullptr;  // Pointer to parent
+            CSVReader *daddy = nullptr;  // Pointer to parent
             CSVRow row;                   // Current row
             size_t i = 0;               // Index of current row
         };
@@ -6302,7 +6310,7 @@ namespace csv {
         /** @name Constructors
          *  Constructors for iterating over large files and parsing in-memory sources.
          */
-         ///@{
+        ///@{
         CSVReader(csv::string_view filename, CSVFormat format = CSVFormat::guess_csv());
 
         /** Allows parsing stream sources such as `std::stringstream` or `std::ifstream`
@@ -6312,23 +6320,24 @@ namespace csv {
          *          specified.
          */
         template<typename TStream,
-            csv::enable_if_t<std::is_base_of<std::istream, TStream>::value, int> = 0>
-        CSVReader(TStream& source, CSVFormat format = CSVFormat()) : _format(format) {
+                csv::enable_if_t<std::is_base_of<std::istream, TStream>::value, int> = 0>
+        CSVReader(TStream &source, CSVFormat format = CSVFormat()) : _format(format) {
             using Parser = internals::StreamParser<TStream>;
 
             if (!format.col_names.empty())
                 this->set_col_names(format.col_names);
 
             this->parser = std::unique_ptr<Parser>(
-                new Parser(source, format, col_names)); // For C++11
+                    new Parser(source, format, col_names)); // For C++11
             this->initial_read();
         }
         ///@}
 
-        CSVReader(const CSVReader&) = delete; // No copy constructor
-        CSVReader(CSVReader&&) = default;     // Move constructor
-        CSVReader& operator=(const CSVReader&) = delete; // No copy assignment
-        CSVReader& operator=(CSVReader&& other) = default;
+        CSVReader(const CSVReader &) = delete; // No copy constructor
+        CSVReader(CSVReader &&) = default;     // Move constructor
+        CSVReader &operator=(const CSVReader &) = delete; // No copy assignment
+        CSVReader &operator=(CSVReader &&other) = default;
+
         ~CSVReader() {
             if (this->read_csv_worker.joinable()) {
                 this->read_csv_worker.join();
@@ -6338,7 +6347,9 @@ namespace csv {
         /** @name Retrieving CSV Rows */
         ///@{
         bool read_row(CSVRow &row);
+
         iterator begin();
+
         HEDLEY_CONST iterator end() const noexcept;
 
         /** Returns true if we have reached end of file */
@@ -6348,7 +6359,9 @@ namespace csv {
         /** @name CSV Metadata */
         ///@{
         CSVFormat get_format() const;
+
         std::vector<std::string> get_col_names() const;
+
         int index_of(csv::string_view col_name) const;
         ///@}
 
@@ -6378,7 +6391,7 @@ namespace csv {
          */
 
         /** Sets this reader's column names and associated data */
-        void set_col_names(const std::vector<std::string>&);
+        void set_col_names(const std::vector<std::string> &);
 
         /** @name CSV Settings **/
         ///@{
@@ -6446,10 +6459,15 @@ namespace csv {
         using TypeCount = std::unordered_map<DataType, size_t>;
 
         std::vector<long double> get_mean() const;
+
         std::vector<long double> get_variance() const;
+
         std::vector<long double> get_mins() const;
+
         std::vector<long double> get_maxes() const;
+
         std::vector<FreqCount> get_counts() const;
+
         std::vector<TypeCount> get_dtypes() const;
 
         std::vector<std::string> get_col_names() const {
@@ -6457,7 +6475,9 @@ namespace csv {
         }
 
         CSVStat(csv::string_view filename, CSVFormat format = CSVFormat::guess_csv());
-        CSVStat(std::stringstream& source, CSVFormat format = CSVFormat());
+
+        CSVStat(std::stringstream &source, CSVFormat format = CSVFormat());
+
     private:
         // An array of rolling averages
         // Each index corresponds to the rolling mean for the column at said index
@@ -6470,14 +6490,19 @@ namespace csv {
         std::vector<long double> n;
 
         // Statistic calculators
-        void variance(const long double&, const size_t&);
-        void count(CSVField&, const size_t&);
-        void min_max(const long double&, const size_t&);
-        void dtype(CSVField&, const size_t&);
+        void variance(const long double &, const size_t &);
+
+        void count(CSVField &, const size_t &);
+
+        void min_max(const long double &, const size_t &);
+
+        void dtype(CSVField &, const size_t &);
 
         void calc();
+
         void calc_chunk();
-        void calc_worker(const size_t&);
+
+        void calc_worker(const size_t &);
 
         CSVReader reader;
         std::deque<CSVRow> records = {};
@@ -6501,19 +6526,24 @@ namespace csv {
     /** @name Shorthand Parsing Functions
      *  @brief Convienience functions for parsing small strings
      */
-     ///@{
-    CSVReader operator ""_csv(const char*, size_t);
-    CSVReader operator ""_csv_no_header(const char*, size_t);
+    ///@{
+    CSVReader operator ""_csv(const char *, size_t);
+
+    CSVReader operator ""_csv_no_header(const char *, size_t);
+
     CSVReader parse(csv::string_view in, CSVFormat format = CSVFormat());
+
     CSVReader parse_no_header(csv::string_view in);
     ///@}
 
     /** @name Utility Functions */
     ///@{
-    std::unordered_map<std::string, DataType> csv_data_types(const std::string&);
-    CSVFileInfo get_file_info(const std::string& filename);
+    std::unordered_map<std::string, DataType> csv_data_types(const std::string &);
+
+    CSVFileInfo get_file_info(const std::string &filename);
+
     int get_col_pos(csv::string_view filename, csv::string_view col_name,
-        const CSVFormat& format = CSVFormat::guess_csv());
+                    const CSVFormat &format = CSVFormat::guess_csv());
     ///@}
 }
 /** @file
@@ -6534,14 +6564,14 @@ namespace csv {
 
         /** to_string() for unsigned integers */
         template<typename T,
-            csv::enable_if_t<std::is_unsigned<T>::value, int> = 0>
+                csv::enable_if_t<std::is_unsigned<T>::value, int> = 0>
         inline std::string to_string(T value) {
             std::string digits_reverse = "";
 
             if (value == 0) return "0";
 
             while (value > 0) {
-                digits_reverse += (char)('0' + (value % 10));
+                digits_reverse += (char) ('0' + (value % 10));
                 value /= 10;
             }
 
@@ -6550,57 +6580,55 @@ namespace csv {
 
         /** to_string() for signed integers */
         template<
-            typename T,
-            csv::enable_if_t<std::is_integral<T>::value && std::is_signed<T>::value, int> = 0
+                typename T,
+                csv::enable_if_t<std::is_integral<T>::value && std::is_signed<T>::value, int> = 0
         >
         inline std::string to_string(T value) {
             if (value >= 0)
-                return to_string((size_t)value);
+                return to_string((size_t) value);
 
-            return "-" + to_string((size_t)(value * -1));
+            return "-" + to_string((size_t) (value * -1));
         }
 
         /** to_string() for floating point numbers */
         template<
-            typename T,
-            csv::enable_if_t<std::is_floating_point<T>::value, int> = 0
+                typename T,
+                csv::enable_if_t<std::is_floating_point<T>::value, int> = 0
         >
-            inline std::string to_string(T value) {
-                std::string result;
+        inline std::string to_string(T value) {
+            std::string result;
 
-                T integral_part;
-                T fractional_part = std::abs(std::modf(value, &integral_part));
-                integral_part = std::abs(integral_part);
+            T integral_part;
+            T fractional_part = std::abs(std::modf(value, &integral_part));
+            integral_part = std::abs(integral_part);
 
-                // Integral part
-                if (value < 0) result = "-";
+            // Integral part
+            if (value < 0) result = "-";
 
-                if (integral_part == 0) {
-                    result = "0";
+            if (integral_part == 0) {
+                result = "0";
+            } else {
+                for (int n_digits = (int) (std::log(integral_part) / std::log(10));
+                     n_digits + 1 > 0; n_digits--) {
+                    int digit = (int) (std::fmod(integral_part, pow10(n_digits + 1)) / pow10(n_digits));
+                    result += (char) ('0' + digit);
                 }
-                else {
-                    for (int n_digits = (int)(std::log(integral_part) / std::log(10));
-                         n_digits + 1 > 0; n_digits --) {
-                        int digit = (int)(std::fmod(integral_part, pow10(n_digits + 1)) / pow10(n_digits));
-                        result += (char)('0' + digit);
-                    }
-                }
+            }
 
-                // Decimal part
-                result += ".";
+            // Decimal part
+            result += ".";
 
-                if (fractional_part > 0) {
-                    fractional_part *= (T)(pow10(DECIMAL_PLACES));
-                    for (int n_digits = DECIMAL_PLACES; n_digits > 0; n_digits--) {
-                        int digit = (int)(std::fmod(fractional_part, pow10(n_digits)) / pow10(n_digits - 1));
-                        result += (char)('0' + digit);
-                    }
+            if (fractional_part > 0) {
+                fractional_part *= (T) (pow10(DECIMAL_PLACES));
+                for (int n_digits = DECIMAL_PLACES; n_digits > 0; n_digits--) {
+                    int digit = (int) (std::fmod(fractional_part, pow10(n_digits)) / pow10(n_digits - 1));
+                    result += (char) ('0' + digit);
                 }
-                else {
-                    result += "0";
-                }
+            } else {
+                result += "0";
+            }
 
-                return result;
+            return result;
         }
     }
 
@@ -6648,14 +6676,14 @@ namespace csv {
          *  @param  _quote_minimal Limit field quoting to only when necessary
         */
 
-        DelimWriter(OutputStream& _out, bool _quote_minimal = true)
-            : out(_out), quote_minimal(_quote_minimal) {};
+        DelimWriter(OutputStream &_out, bool _quote_minimal = true)
+                : out(_out), quote_minimal(_quote_minimal) {};
 
         /** Construct a DelimWriter over the file
          *
          *  @param[out] filename  File to write to
          */
-        DelimWriter(const std::string& filename) : DelimWriter(std::ifstream(filename)) {};
+        DelimWriter(const std::string &filename) : DelimWriter(std::ifstream(filename)) {};
 
         /** Destructor will flush remaining data
          *
@@ -6673,7 +6701,7 @@ namespace csv {
          *  @return  The current DelimWriter instance (allowing for operator chaining)
          */
         template<typename T, size_t Size>
-        DelimWriter& operator<<(const std::array<T, Size>& record) {
+        DelimWriter &operator<<(const std::array<T, Size> &record) {
             for (size_t i = 0; i < Size; i++) {
                 out << csv_escape(record[i]);
                 if (i + 1 != Size) out << Delim;
@@ -6685,7 +6713,7 @@ namespace csv {
 
         /** @copydoc operator<< */
         template<typename... T>
-        DelimWriter& operator<<(const std::tuple<T...>& record) {
+        DelimWriter &operator<<(const std::tuple<T...> &record) {
             this->write_tuple<0, T...>(record);
             return *this;
         }
@@ -6696,15 +6724,15 @@ namespace csv {
          * @copydoc operator<<
          */
         template<
-            typename T, typename Alloc, template <typename, typename> class Container,
+                typename T, typename Alloc, template<typename, typename> class Container,
 
-            // Avoid conflicting with tuples with two elements
-            csv::enable_if_t<std::is_class<Alloc>::value, int> = 0
+                // Avoid conflicting with tuples with two elements
+                csv::enable_if_t<std::is_class<Alloc>::value, int> = 0
         >
-            DelimWriter& operator<<(const Container<T, Alloc>& record) {
+        DelimWriter &operator<<(const Container<T, Alloc> &record) {
             const size_t ilen = record.size();
             size_t i = 0;
-            for (const auto& field : record) {
+            for (const auto &field: record) {
                 out << csv_escape(field);
                 if (i + 1 != ilen) out << Delim;
                 i++;
@@ -6723,28 +6751,26 @@ namespace csv {
 
     private:
         template<
-            typename T,
-            csv::enable_if_t<
-                !std::is_convertible<T, std::string>::value
-                && !std::is_convertible<T, csv::string_view>::value
-            , int> = 0
+                typename T,
+                csv::enable_if_t<
+                        !std::is_convertible<T, std::string>::value
+                        && !std::is_convertible<T, csv::string_view>::value, int> = 0
         >
         std::string csv_escape(T in) {
             return internals::to_string(in);
         }
 
         template<
-            typename T,
-            csv::enable_if_t<
-                std::is_convertible<T, std::string>::value
-                || std::is_convertible<T, csv::string_view>::value
-            , int> = 0
+                typename T,
+                csv::enable_if_t<
+                        std::is_convertible<T, std::string>::value
+                        || std::is_convertible<T, csv::string_view>::value, int> = 0
         >
         std::string csv_escape(T in) {
             IF_CONSTEXPR(std::is_convertible<T, csv::string_view>::value) {
                 return _csv_escape(in);
             }
-            
+
             return _csv_escape(std::string(in));
         }
 
@@ -6758,7 +6784,7 @@ namespace csv {
             // Do we need a quote escape
             bool quote_escape = false;
 
-            for (auto ch : in) {
+            for (auto ch: in) {
                 if (ch == Quote || ch == Delim || ch == '\r' || ch == '\n') {
                     quote_escape = true;
                     break;
@@ -6789,7 +6815,7 @@ namespace csv {
 
         /** Recurisve template for writing std::tuples */
         template<size_t Index = 0, typename... T>
-        typename std::enable_if<Index < sizeof...(T), void>::type write_tuple(const std::tuple<T...>& record) {
+        typename std::enable_if<Index < sizeof...(T), void>::type write_tuple(const std::tuple<T...> &record) {
             out << csv_escape(std::get<Index>(record));
 
             IF_CONSTEXPR (Index + 1 < sizeof...(T)) out << Delim;
@@ -6799,8 +6825,8 @@ namespace csv {
 
         /** Base case for writing std::tuples */
         template<size_t Index = 0, typename... T>
-        typename std::enable_if<Index == sizeof...(T), void>::type write_tuple(const std::tuple<T...>& record) {
-            (void)record;
+        typename std::enable_if<Index == sizeof...(T), void>::type write_tuple(const std::tuple<T...> &record) {
+            (void) record;
             end_out();
         }
 
@@ -6810,7 +6836,7 @@ namespace csv {
             IF_CONSTEXPR(Flush) out.flush();
         }
 
-        OutputStream & out;
+        OutputStream &out;
         bool quote_minimal;
     };
 
@@ -6837,25 +6863,25 @@ namespace csv {
 
     /** Return a csv::CSVWriter over the output stream */
     template<class OutputStream>
-    inline CSVWriter<OutputStream> make_csv_writer(OutputStream& out, bool quote_minimal=true) {
+    inline CSVWriter<OutputStream> make_csv_writer(OutputStream &out, bool quote_minimal = true) {
         return CSVWriter<OutputStream>(out, quote_minimal);
     }
 
     /** Return a buffered csv::CSVWriter over the output stream (does not auto flush) */
     template<class OutputStream>
-    inline CSVWriter<OutputStream, false> make_csv_writer_buffered(OutputStream& out, bool quote_minimal=true) {
+    inline CSVWriter<OutputStream, false> make_csv_writer_buffered(OutputStream &out, bool quote_minimal = true) {
         return CSVWriter<OutputStream, false>(out, quote_minimal);
     }
 
     /** Return a csv::TSVWriter over the output stream */
     template<class OutputStream>
-    inline TSVWriter<OutputStream> make_tsv_writer(OutputStream& out, bool quote_minimal=true) {
+    inline TSVWriter<OutputStream> make_tsv_writer(OutputStream &out, bool quote_minimal = true) {
         return TSVWriter<OutputStream>(out, quote_minimal);
     }
 
     /** Return a buffered csv::TSVWriter over the output stream (does not auto flush) */
     template<class OutputStream>
-    inline TSVWriter<OutputStream, false> make_tsv_writer_buffered(OutputStream& out, bool quote_minimal=true) {
+    inline TSVWriter<OutputStream, false> make_tsv_writer_buffered(OutputStream &out, bool quote_minimal = true) {
         return TSVWriter<OutputStream, false>(out, quote_minimal);
     }
     ///@}
@@ -6881,7 +6907,7 @@ namespace csv {
             const size_t bytes = 500000;
 
             std::error_code error;
-            size_t length = std::min((size_t)file_size, bytes);
+            size_t length = std::min((size_t) file_size, bytes);
             auto mmap = mio::make_mmap_source(std::string(filename), 0, length, error);
 
             if (error) {
@@ -6894,19 +6920,19 @@ namespace csv {
 #ifdef _MSC_VER
 #pragma region IBasicCVParser
 #endif
+
         CSV_INLINE IBasicCSVParser::IBasicCSVParser(
-            const CSVFormat& format,
-            const ColNamesPtr& col_names
+                const CSVFormat &format,
+                const ColNamesPtr &col_names
         ) : _col_names(col_names) {
             if (format.no_quote) {
                 _parse_flags = internals::make_parse_flags(format.get_delim());
-            }
-            else {
+            } else {
                 _parse_flags = internals::make_parse_flags(format.get_delim(), format.quote_char);
             }
 
             _ws_flags = internals::make_ws_flags(
-                format.trim_chars.data(), format.trim_chars.size()
+                    format.trim_chars.data(), format.trim_chars.size()
             );
         }
 
@@ -6914,9 +6940,9 @@ namespace csv {
             using internals::ParseFlags;
 
             bool empty_last_field = this->data_ptr
-                && this->data_ptr->_data
-                && !this->data_ptr->data.empty()
-                && parse_flag(this->data_ptr->data.back()) == ParseFlags::DELIMITER;
+                                    && this->data_ptr->_data
+                                    && !this->data_ptr->data.empty()
+                                    && parse_flag(this->data_ptr->data.back()) == ParseFlags::DELIMITER;
 
             // Push field
             if (this->field_length > 0 || empty_last_field) {
@@ -6930,14 +6956,14 @@ namespace csv {
 
         CSV_INLINE void IBasicCSVParser::parse_field() noexcept {
             using internals::ParseFlags;
-            auto& in = this->data_ptr->data;
+            auto &in = this->data_ptr->data;
 
             // Trim off leading whitespace
             while (data_pos < in.size() && ws_flag(in[data_pos]))
                 data_pos++;
 
             if (field_start == UNINITIALIZED_FIELD)
-                field_start = (int)(data_pos - current_row_start());
+                field_start = (int) (data_pos - current_row_start());
 
             // Optimization: Since NOT_SPECIAL characters tend to occur in contiguous
             // sequences, use the loop below to avoid having to go through the outer
@@ -6953,22 +6979,20 @@ namespace csv {
                 this->field_length--;
         }
 
-        CSV_INLINE void IBasicCSVParser::push_field()
-        {
+        CSV_INLINE void IBasicCSVParser::push_field() {
             // Update
             if (field_has_double_quote) {
                 fields->emplace_back(
-                    field_start == UNINITIALIZED_FIELD ? 0 : (unsigned int)field_start,
-                    field_length,
-                    true
+                        field_start == UNINITIALIZED_FIELD ? 0 : (unsigned int) field_start,
+                        field_length,
+                        true
                 );
                 field_has_double_quote = false;
 
-            }
-            else {
+            } else {
                 fields->emplace_back(
-                    field_start == UNINITIALIZED_FIELD ? 0 : (unsigned int)field_start,
-                    field_length
+                        field_start == UNINITIALIZED_FIELD ? 0 : (unsigned int) field_start,
+                        field_length
                 );
             }
 
@@ -6980,8 +7004,7 @@ namespace csv {
         }
 
         /** @return The number of characters parsed that belong to complete rows */
-        CSV_INLINE size_t IBasicCSVParser::parse()
-        {
+        CSV_INLINE size_t IBasicCSVParser::parse() {
             using internals::ParseFlags;
 
             this->quote_escape = false;
@@ -6989,71 +7012,70 @@ namespace csv {
             this->current_row_start() = 0;
             this->trim_utf8_bom();
 
-            auto& in = this->data_ptr->data;
+            auto &in = this->data_ptr->data;
             while (this->data_pos < in.size()) {
                 switch (compound_parse_flag(in[this->data_pos])) {
-                case ParseFlags::DELIMITER:
-                    this->push_field();
-                    this->data_pos++;
-                    break;
+                    case ParseFlags::DELIMITER:
+                        this->push_field();
+                        this->data_pos++;
+                        break;
 
-                case ParseFlags::NEWLINE:
-                    this->data_pos++;
-
-                    // Catches CRLF (or LFLF)
-                    if (this->data_pos < in.size() && parse_flag(in[this->data_pos]) == ParseFlags::NEWLINE)
+                    case ParseFlags::NEWLINE:
                         this->data_pos++;
 
-                    // End of record -> Write record
-                    this->push_field();
-                    this->push_row();
+                        // Catches CRLF (or LFLF)
+                        if (this->data_pos < in.size() && parse_flag(in[this->data_pos]) == ParseFlags::NEWLINE)
+                            this->data_pos++;
 
-                    // Reset
-                    this->current_row = CSVRow(data_ptr, this->data_pos, fields->size());
-                    break;
+                        // End of record -> Write record
+                        this->push_field();
+                        this->push_row();
 
-                case ParseFlags::NOT_SPECIAL:
-                    this->parse_field();
-                    break;
-
-                case ParseFlags::QUOTE_ESCAPE_QUOTE:
-                    if (data_pos + 1 == in.size()) return this->current_row_start();
-                    else if (data_pos + 1 < in.size()) {
-                        auto next_ch = parse_flag(in[data_pos + 1]);
-                        if (next_ch >= ParseFlags::DELIMITER) {
-                            quote_escape = false;
-                            data_pos++;
-                            break;
-                        }
-                        else if (next_ch == ParseFlags::QUOTE) {
-                            // Case: Escaped quote
-                            data_pos += 2;
-                            this->field_length += 2;
-                            this->field_has_double_quote = true;
-                            break;
-                        }
-                    }
-                    
-                    // Case: Unescaped single quote => not strictly valid but we'll keep it
-                    this->field_length++;
-                    data_pos++;
-
-                    break;
-
-                default: // Quote (currently not quote escaped)
-                    if (this->field_length == 0) {
-                        quote_escape = true;
-                        data_pos++;
-                        if (field_start == UNINITIALIZED_FIELD && data_pos < in.size() && !ws_flag(in[data_pos]))
-                            field_start = (int)(data_pos - current_row_start());
+                        // Reset
+                        this->current_row = CSVRow(data_ptr, this->data_pos, fields->size());
                         break;
-                    }
 
-                    // Case: Unescaped quote
-                    this->field_length++;
-                    data_pos++;
+                    case ParseFlags::NOT_SPECIAL:
+                        this->parse_field();
+                        break;
 
-                    break;
+                    case ParseFlags::QUOTE_ESCAPE_QUOTE:
+                        if (data_pos + 1 == in.size()) return this->current_row_start();
+                        else if (data_pos + 1 < in.size()) {
+                            auto next_ch = parse_flag(in[data_pos + 1]);
+                            if (next_ch >= ParseFlags::DELIMITER) {
+                                quote_escape = false;
+                                data_pos++;
+                                break;
+                            } else if (next_ch == ParseFlags::QUOTE) {
+                                // Case: Escaped quote
+                                data_pos += 2;
+                                this->field_length += 2;
+                                this->field_has_double_quote = true;
+                                break;
+                            }
+                        }
+
+                        // Case: Unescaped single quote => not strictly valid but we'll keep it
+                        this->field_length++;
+                        data_pos++;
+
+                        break;
+
+                    default: // Quote (currently not quote escaped)
+                        if (this->field_length == 0) {
+                            quote_escape = true;
+                            data_pos++;
+                            if (field_start == UNINITIALIZED_FIELD && data_pos < in.size() && !ws_flag(in[data_pos]))
+                                field_start = (int) (data_pos - current_row_start());
+                            break;
+                        }
+
+                        // Case: Unescaped quote
+                        this->field_length++;
+                        data_pos++;
+
+                        break;
                 }
             }
 
@@ -7073,7 +7095,7 @@ namespace csv {
         }
 
         CSV_INLINE void IBasicCSVParser::trim_utf8_bom() {
-            auto& data = this->data_ptr->data;
+            auto &data = this->data_ptr->data;
 
             if (!this->unicode_bom_scan && data.size() >= 3) {
                 if (data[0] == '\xEF' && data[1] == '\xBB' && data[2] == '\xBF') {
@@ -7084,6 +7106,7 @@ namespace csv {
                 this->unicode_bom_scan = true;
             }
         }
+
 #ifdef _MSC_VER
 #pragma endregion
 #endif
@@ -7091,6 +7114,7 @@ namespace csv {
 #ifdef _MSC_VER
 #pragma region Specializations
 #endif
+
         CSV_INLINE void MmapParser::next(size_t bytes = ITERATION_CHUNK_SIZE) {
             // Reset parser state
             this->field_start = UNINITIALIZED_FIELD;
@@ -7100,18 +7124,19 @@ namespace csv {
             // Create memory map
             size_t length = std::min(this->source_size - this->mmap_pos, bytes);
             std::error_code error;
-            this->data_ptr->_data = std::make_shared<mio::basic_mmap_source<char>>(mio::make_mmap_source(this->_filename, this->mmap_pos, length, error));
+            this->data_ptr->_data = std::make_shared<mio::basic_mmap_source<char>>(
+                    mio::make_mmap_source(this->_filename, this->mmap_pos, length, error));
             this->mmap_pos += length;
             if (error) throw error;
 
-            auto mmap_ptr = (mio::basic_mmap_source<char>*)(this->data_ptr->_data.get());
+            auto mmap_ptr = (mio::basic_mmap_source<char> *) (this->data_ptr->_data.get());
 
             // Create string view
             this->data_ptr->data = csv::string_view(mmap_ptr->data(), mmap_ptr->length());
 
             // Parse
             this->current_row = CSVRow(this->data_ptr);
-            size_t remainder = this->parse();            
+            size_t remainder = this->parse();
 
             if (this->mmap_pos == this->source_size || no_chunk()) {
                 this->_eof = true;
@@ -7120,6 +7145,7 @@ namespace csv {
 
             this->mmap_pos -= (length - remainder);
         }
+
 #ifdef _MSC_VER
 #pragma endregion
 #endif
@@ -7133,7 +7159,7 @@ namespace csv {
             return this->col_names;
         }
 
-        CSV_INLINE void ColNames::set_col_names(const std::vector<std::string>& cnames) {
+        CSV_INLINE void ColNames::set_col_names(const std::vector<std::string> &cnames) {
             this->col_names = cnames;
 
             for (size_t i = 0; i < cnames.size(); i++) {
@@ -7144,7 +7170,7 @@ namespace csv {
         CSV_INLINE int ColNames::index_of(csv::string_view col_name) const {
             auto pos = this->col_pos.find(col_name.data());
             if (pos != this->col_pos.end())
-                return (int)pos->second;
+                return (int) pos->second;
 
             return CSV_NOT_FOUND;
         }
@@ -7164,38 +7190,38 @@ namespace csv {
 
 
 namespace csv {
-    CSV_INLINE CSVFormat& CSVFormat::delimiter(char delim) {
-        this->possible_delimiters = { delim };
+    CSV_INLINE CSVFormat &CSVFormat::delimiter(char delim) {
+        this->possible_delimiters = {delim};
         this->assert_no_char_overlap();
         return *this;
     }
 
-    CSV_INLINE CSVFormat& CSVFormat::delimiter(const std::vector<char> & delim) {
+    CSV_INLINE CSVFormat &CSVFormat::delimiter(const std::vector<char> &delim) {
         this->possible_delimiters = delim;
         this->assert_no_char_overlap();
         return *this;
     }
 
-    CSV_INLINE CSVFormat& CSVFormat::quote(char quote) {
+    CSV_INLINE CSVFormat &CSVFormat::quote(char quote) {
         this->no_quote = false;
         this->quote_char = quote;
         this->assert_no_char_overlap();
         return *this;
     }
 
-    CSV_INLINE CSVFormat& CSVFormat::trim(const std::vector<char> & chars) {
+    CSV_INLINE CSVFormat &CSVFormat::trim(const std::vector<char> &chars) {
         this->trim_chars = chars;
         this->assert_no_char_overlap();
         return *this;
     }
 
-    CSV_INLINE CSVFormat& CSVFormat::column_names(const std::vector<std::string>& names) {
+    CSV_INLINE CSVFormat &CSVFormat::column_names(const std::vector<std::string> &names) {
         this->col_names = names;
         this->header = -1;
         return *this;
     }
 
-    CSV_INLINE CSVFormat& CSVFormat::header_row(int row) {
+    CSV_INLINE CSVFormat &CSVFormat::header_row(int row) {
         if (row < 0) this->variable_column_policy = VariableColumnPolicy::KEEP;
 
         this->header = row;
@@ -7203,11 +7229,10 @@ namespace csv {
         return *this;
     }
 
-    CSV_INLINE void CSVFormat::assert_no_char_overlap()
-    {
+    CSV_INLINE void CSVFormat::assert_no_char_overlap() {
         auto delims = std::set<char>(
-            this->possible_delimiters.begin(), this->possible_delimiters.end()),
-            trims = std::set<char>(
+                this->possible_delimiters.begin(), this->possible_delimiters.end()),
+                trims = std::set<char>(
                 this->trim_chars.begin(), this->trim_chars.end());
 
         // Stores intersection of possible delimiters and trim characters
@@ -7215,9 +7240,9 @@ namespace csv {
 
         // Find which characters overlap, if any
         std::set_intersection(
-            delims.begin(), delims.end(),
-            trims.begin(), trims.end(),
-            std::back_inserter(intersection));
+                delims.begin(), delims.end(),
+                trims.begin(), trims.end(),
+                std::back_inserter(intersection));
 
         // Make sure quote character is not contained in possible delimiters
         // or whitespace characters
@@ -7228,8 +7253,8 @@ namespace csv {
 
         if (!intersection.empty()) {
             std::string err_msg = "There should be no overlap between the quote character, "
-                "the set of possible delimiters "
-                "and the set of whitespace characters. Offending characters: ";
+                                  "the set of possible delimiters "
+                                  "and the set of whitespace characters. Offending characters: ";
 
             // Create a pretty error message with the list of overlapping
             // characters
@@ -7253,7 +7278,7 @@ namespace csv {
 
 namespace csv {
     namespace internals {
-        CSV_INLINE std::string format_row(const std::vector<std::string>& row, csv::string_view delim) {
+        CSV_INLINE std::string format_row(const std::vector<std::string> &row, csv::string_view delim) {
             /** Print a CSV row */
             std::stringstream ret;
             for (size_t i = 0; i < row.size(); i++) {
@@ -7287,10 +7312,10 @@ namespace csv {
 
         CSV_INLINE GuessScore calculate_score(csv::string_view head, CSVFormat format) {
             // Frequency counter of row length
-            std::unordered_map<size_t, size_t> row_tally = { { 0, 0 } };
+            std::unordered_map<size_t, size_t> row_tally = {{0, 0}};
 
             // Map row lengths to row num where they first occurred
-            std::unordered_map<size_t, size_t> row_when = { { 0, 0 } };
+            std::unordered_map<size_t, size_t> row_when = {{0, 0}};
 
             // Parse the CSV
             std::stringstream source(head.data());
@@ -7301,14 +7326,13 @@ namespace csv {
             parser.next();
 
             for (size_t i = 0; i < rows.size(); i++) {
-                auto& row = rows[i];
+                auto &row = rows[i];
 
                 // Ignore zero-length rows
                 if (row.size() > 0) {
                     if (row_tally.find(row.size()) != row_tally.end()) {
                         row_tally[row.size()]++;
-                    }
-                    else {
+                    } else {
                         row_tally[row.size()] = 1;
                         row_when[row.size()] = i;
                     }
@@ -7320,10 +7344,10 @@ namespace csv {
 
             // Final score is equal to the largest
             // row size times rows of that size
-            for (auto& pair : row_tally) {
+            for (auto &pair: row_tally) {
                 auto row_size = pair.first;
                 auto row_count = pair.second;
-                double score = (double)(row_size * row_count);
+                double score = (double) (row_size * row_count);
                 if (score > final_score) {
                     final_score = score;
                     header_row = row_when[row_size];
@@ -7331,13 +7355,13 @@ namespace csv {
             }
 
             return {
-                final_score,
-                header_row
+                    final_score,
+                    header_row
             };
         }
 
         /** Guess the delimiter used by a delimiter-separated values file */
-        CSV_INLINE CSVGuessResult _guess_format(csv::string_view head, const std::vector<char>& delims) {
+        CSV_INLINE CSVGuessResult _guess_format(csv::string_view head, const std::vector<char> &delims) {
             /** For each delimiter, find out which row length was most common.
              *  The delimiter with the longest mode row length wins.
              *  Then, the line number of the header row is the first row with
@@ -7346,20 +7370,20 @@ namespace csv {
 
             CSVFormat format;
             size_t max_score = 0,
-                header = 0;
+                    header = 0;
             char current_delim = delims[0];
 
-            for (char cand_delim : delims) {
+            for (char cand_delim: delims) {
                 auto result = calculate_score(head, format.delimiter(cand_delim));
 
-                if ((size_t)result.score > max_score) {
-                    max_score = (size_t)result.score;
+                if ((size_t) result.score > max_score) {
+                    max_score = (size_t) result.score;
                     current_delim = cand_delim;
                     header = result.header;
                 }
             }
 
-            return { current_delim, (int)header };
+            return {current_delim, (int) header};
         }
     }
 
@@ -7382,7 +7406,7 @@ namespace csv {
     }
 
     /** Guess the delimiter used by a delimiter-separated values file */
-    CSV_INLINE CSVGuessResult guess_format(csv::string_view filename, const std::vector<char>& delims) {
+    CSV_INLINE CSVGuessResult guess_format(csv::string_view filename, const std::vector<char> &delims) {
         auto head = internals::get_csv_head(filename);
         return internals::_guess_format(head, delims);
     }
@@ -7398,7 +7422,7 @@ namespace csv {
      *  \snippet tests/test_read_csv.cpp CSVField Example
      *
      */
-	CSV_INLINE CSVReader::CSVReader(csv::string_view filename, CSVFormat format) : _format(format) {
+    CSV_INLINE CSVReader::CSVReader(csv::string_view filename, CSVFormat format) : _format(format) {
         auto head = internals::get_csv_head(filename);
         using Parser = internals::MmapParser;
 
@@ -7445,7 +7469,7 @@ namespace csv {
     CSV_INLINE int CSVReader::index_of(csv::string_view col_name) const {
         auto _col_names = this->get_col_names();
         for (size_t i = 0; i < _col_names.size(); i++)
-            if (_col_names[i] == col_name) return (int)i;
+            if (_col_names[i] == col_name) return (int) i;
 
         return CSV_NOT_FOUND;
     }
@@ -7455,8 +7479,7 @@ namespace csv {
             for (int i = 0; i <= this->_format.header && !this->records->empty(); i++) {
                 if (i == this->_format.header && this->col_names->empty()) {
                     this->set_col_names(this->records->pop_front());
-                }
-                else {
+                } else {
                     this->records->pop_front();
                 }
             }
@@ -7468,8 +7491,7 @@ namespace csv {
     /**
      *  @param[in] names Column names
      */
-    CSV_INLINE void CSVReader::set_col_names(const std::vector<std::string>& names)
-    {
+    CSV_INLINE void CSVReader::set_col_names(const std::vector<std::string> &names) {
         this->col_names->set_col_names(names);
         this->n_cols = names.size();
     }
@@ -7532,9 +7554,8 @@ namespace csv {
 
                     this->read_csv_worker = std::thread(&CSVReader::read_csv, this, internals::ITERATION_CHUNK_SIZE);
                 }
-            }
-            else if (this->records->front().size() != this->n_cols &&
-                this->_format.variable_column_policy != VariableColumnPolicy::KEEP) {
+            } else if (this->records->front().size() != this->n_cols &&
+                       this->_format.variable_column_policy != VariableColumnPolicy::KEEP) {
                 auto errored_row = this->records->pop_front();
 
                 if (this->_format.variable_column_policy == VariableColumnPolicy::THROW) {
@@ -7543,8 +7564,7 @@ namespace csv {
 
                     throw std::runtime_error("Line too long " + internals::format_row(errored_row));
                 }
-            }
-            else {
+            } else {
                 row = this->records->pop_front();
                 this->_n_rows++;
                 return true;
@@ -7586,8 +7606,8 @@ namespace csv {
     // CSVReader::iterator //
     /////////////////////////
 
-    CSV_INLINE CSVReader::iterator::iterator(CSVReader* _daddy, CSVRow&& _row) :
-        daddy(_daddy) {
+    CSV_INLINE CSVReader::iterator::iterator(CSVReader *_daddy, CSVRow &&_row) :
+            daddy(_daddy) {
         row = std::move(_row);
     }
 
@@ -7598,7 +7618,7 @@ namespace csv {
      *  @note This iterator does **not** block the thread responsible for parsing CSV.
      *
      */
-    CSV_INLINE CSVReader::iterator& CSVReader::iterator::operator++() {
+    CSV_INLINE CSVReader::iterator &CSVReader::iterator::operator++() {
         if (!daddy->read_row(this->row)) {
             this->daddy = nullptr; // this == end()
         }
@@ -7626,14 +7646,14 @@ namespace csv {
 
 namespace csv {
     namespace internals {
-        CSV_INLINE RawCSVField& CSVFieldList::operator[](size_t n) const {
+        CSV_INLINE RawCSVField &CSVFieldList::operator[](size_t n) const {
             const size_t page_no = n / _single_buffer_capacity;
             const size_t buffer_idx = (page_no < 1) ? n : n % _single_buffer_capacity;
             return this->buffers[page_no][buffer_idx];
         }
 
         CSV_INLINE void CSVFieldList::allocate() {
-            RawCSVField * buffer = new RawCSVField[_single_buffer_capacity];
+            RawCSVField *buffer = new RawCSVField[_single_buffer_capacity];
             buffers.push_back(buffer);
             _current_buffer_size = 0;
             _back = &(buffers.back()[0]);
@@ -7662,8 +7682,8 @@ namespace csv {
      *
      *  @param[in] col_name The column to look for
      */
-    CSV_INLINE CSVField CSVRow::operator[](const std::string& col_name) const {
-        auto & col_names = this->data->col_names;
+    CSV_INLINE CSVField CSVRow::operator[](const std::string &col_name) const {
+        auto &col_names = this->data->col_names;
         auto col_pos = col_names->index_of(col_name);
         if (col_pos > -1) {
             return this->operator[](col_pos);
@@ -7680,19 +7700,18 @@ namespace csv {
         return ret;
     }
 
-    CSV_INLINE csv::string_view CSVRow::get_field(size_t index) const
-    {
+    CSV_INLINE csv::string_view CSVRow::get_field(size_t index) const {
         using internals::ParseFlags;
 
         if (index >= this->size())
             throw std::runtime_error("Index out of bounds.");
 
         const size_t field_index = this->fields_start + index;
-        auto& field = this->data->fields[field_index];
+        auto &field = this->data->fields[field_index];
         auto field_str = csv::string_view(this->data->data).substr(this->data_start + field.start);
 
         if (field.has_double_quote) {
-            auto& value = this->data->double_quote_fields[field_index];
+            auto &value = this->data->double_quote_fields[field_index];
             if (value.empty()) {
                 bool prev_ch_quote = false;
                 for (size_t i = 0; i < field.length; i++) {
@@ -7700,8 +7719,7 @@ namespace csv {
                         if (prev_ch_quote) {
                             prev_ch_quote = false;
                             continue;
-                        }
-                        else {
+                        } else {
                             prev_ch_quote = true;
                         }
                     }
@@ -7716,13 +7734,13 @@ namespace csv {
         return field_str.substr(0, field.length);
     }
 
-    CSV_INLINE bool CSVField::try_parse_hex(int& parsedValue) {
+    CSV_INLINE bool CSVField::try_parse_hex(int &parsedValue) {
         size_t start = 0, end = 0;
 
         // Trim out whitespace chars
         for (; start < this->sv.size() && this->sv[start] == ' '; start++);
         for (end = start; end < this->sv.size() && this->sv[end] != ' '; end++);
-        
+
         unsigned long long int value = 0;
 
         size_t digits = (end - start);
@@ -7730,48 +7748,48 @@ namespace csv {
 
         if (digits == 0) return false;
 
-        for (const auto& ch : this->sv.substr(start, digits)) {
+        for (const auto &ch: this->sv.substr(start, digits)) {
             int digit = 0;
 
             switch (ch) {
-            case '0':
-            case '1':
-            case '2':
-            case '3':
-            case '4':
-            case '5':
-            case '6':
-            case '7':
-            case '8':
-            case '9':
-                digit = static_cast<int>(ch - '0');
-                break;
-            case 'a':
-            case 'A':
-                digit = 10;
-                break;
-            case 'b':
-            case 'B':
-                digit = 11;
-                break;
-            case 'c':
-            case 'C':
-                digit = 12;
-                break;
-            case 'd':
-            case 'D':
-                digit = 13;
-                break;
-            case 'e':
-            case 'E':
-                digit = 14;
-                break;
-            case 'f':
-            case 'F':
-                digit = 15;
-                break;
-            default:
-                return false;
+                case '0':
+                case '1':
+                case '2':
+                case '3':
+                case '4':
+                case '5':
+                case '6':
+                case '7':
+                case '8':
+                case '9':
+                    digit = static_cast<int>(ch - '0');
+                    break;
+                case 'a':
+                case 'A':
+                    digit = 10;
+                    break;
+                case 'b':
+                case 'B':
+                    digit = 11;
+                    break;
+                case 'c':
+                case 'C':
+                    digit = 12;
+                    break;
+                case 'd':
+                case 'D':
+                    digit = 13;
+                    break;
+                case 'e':
+                case 'E':
+                    digit = 14;
+                    break;
+                case 'f':
+                case 'F':
+                    digit = 15;
+                    break;
+                default:
+                    return false;
             }
 
             value += digit * pow(16, base16_exponent);
@@ -7796,7 +7814,7 @@ namespace csv {
      *           in dereferencing a null pointer.
      */
     CSV_INLINE CSVRow::iterator CSVRow::end() const noexcept {
-        return CSVRow::iterator(this, (int)this->size());
+        return CSVRow::iterator(this, (int) this->size());
     }
 
     CSV_INLINE CSVRow::reverse_iterator CSVRow::rbegin() const noexcept {
@@ -7808,11 +7826,11 @@ namespace csv {
     }
 
     CSV_INLINE HEDLEY_NON_NULL(2)
-    CSVRow::iterator::iterator(const CSVRow* _reader, int _i)
-        : daddy(_reader), i(_i) {
-        if (_i < (int)this->daddy->size())
+    CSVRow::iterator::iterator(const CSVRow *_reader, int _i)
+            : daddy(_reader), i(_i) {
+        if (_i < (int) this->daddy->size())
             this->field = std::make_shared<CSVField>(
-                this->daddy->operator[](_i));
+                    this->daddy->operator[](_i));
         else
             this->field = nullptr;
     }
@@ -7823,19 +7841,19 @@ namespace csv {
 
     CSV_INLINE CSVRow::iterator::pointer CSVRow::iterator::operator->() const {
         // Using CSVField * as pointer type causes segfaults in MSVC debug builds
-        #ifdef _MSC_BUILD
+#ifdef _MSC_BUILD
         return this->field;
-        #else
+#else
         return this->field.get();
-        #endif
+#endif
     }
 
-    CSV_INLINE CSVRow::iterator& CSVRow::iterator::operator++() {
+    CSV_INLINE CSVRow::iterator &CSVRow::iterator::operator++() {
         // Pre-increment operator
         this->i++;
-        if (this->i < (int)this->daddy->size())
+        if (this->i < (int) this->daddy->size())
             this->field = std::make_shared<CSVField>(
-                this->daddy->operator[](i));
+                    this->daddy->operator[](i));
         else // Reached the end of row
             this->field = nullptr;
         return *this;
@@ -7848,11 +7866,11 @@ namespace csv {
         return temp;
     }
 
-    CSV_INLINE CSVRow::iterator& CSVRow::iterator::operator--() {
+    CSV_INLINE CSVRow::iterator &CSVRow::iterator::operator--() {
         // Pre-decrement operator
         this->i--;
         this->field = std::make_shared<CSVField>(
-            this->daddy->operator[](this->i));
+                this->daddy->operator[](this->i));
         return *this;
     }
 
@@ -7862,16 +7880,17 @@ namespace csv {
         this->operator--();
         return temp;
     }
-    
+
     CSV_INLINE CSVRow::iterator CSVRow::iterator::operator+(difference_type n) const {
         // Allows for iterator arithmetic
-        return CSVRow::iterator(this->daddy, i + (int)n);
+        return CSVRow::iterator(this->daddy, i + (int) n);
     }
 
     CSV_INLINE CSVRow::iterator CSVRow::iterator::operator-(difference_type n) const {
         // Allows for iterator arithmetic
         return CSVRow::iterator::operator+(-n);
     }
+
 #ifdef _MSC_VER
 #pragma endregion CSVRow Iterator
 #endif
@@ -7924,38 +7943,32 @@ namespace csv {
 
          @complexity Linear in the length of string @a s.
         */
-        static std::size_t json_extra_space(csv::string_view& s) noexcept
-        {
+        static std::size_t json_extra_space(csv::string_view &s) noexcept {
             std::size_t result = 0;
 
 
-            for (const auto& c : s)
-            {
-                switch (c)
-                {
-                case '"':
-                case '\\':
-                case '\b':
-                case '\f':
-                case '\n':
-                case '\r':
-                case '\t':
-                {
-                    // from c (1 byte) to \x (2 bytes)
-                    result += 1;
-                    break;
-                }
-
-
-                default:
-                {
-                    if (c >= 0x00 && c <= 0x1f)
-                    {
-                        // from c (1 byte) to \uxxxx (6 bytes)
-                        result += 5;
+            for (const auto &c: s) {
+                switch (c) {
+                    case '"':
+                    case '\\':
+                    case '\b':
+                    case '\f':
+                    case '\n':
+                    case '\r':
+                    case '\t': {
+                        // from c (1 byte) to \x (2 bytes)
+                        result += 1;
+                        break;
                     }
-                    break;
-                }
+
+
+                    default: {
+                        if (c >= 0x00 && c <= 0x1f) {
+                            // from c (1 byte) to \uxxxx (6 bytes)
+                            result += 5;
+                        }
+                        break;
+                    }
                 }
             }
 
@@ -7963,11 +7976,9 @@ namespace csv {
             return result;
         }
 
-        CSV_INLINE std::string json_escape_string(csv::string_view s) noexcept
-        {
+        CSV_INLINE std::string json_escape_string(csv::string_view s) noexcept {
             const auto space = json_extra_space(s);
-            if (space == 0)
-            {
+            if (space == 0) {
                 return std::string(s);
             }
 
@@ -7975,90 +7986,77 @@ namespace csv {
             std::string result(s.size() + space, '\\');
             std::size_t pos = 0;
 
-            for (const auto& c : s)
-            {
-                switch (c)
-                {
-                // quotation mark (0x22)
-                case '"':
-                {
-                    result[pos + 1] = '"';
-                    pos += 2;
-                    break;
-                }
-
-
-                // reverse solidus (0x5c)
-                case '\\':
-                {
-                    // nothing to change
-                    pos += 2;
-                    break;
-                }
-
-
-                // backspace (0x08)
-                case '\b':
-                {
-                    result[pos + 1] = 'b';
-                    pos += 2;
-                    break;
-                }
-
-
-                // formfeed (0x0c)
-                case '\f':
-                {
-                    result[pos + 1] = 'f';
-                    pos += 2;
-                    break;
-                }
-
-
-                // newline (0x0a)
-                case '\n':
-                {
-                    result[pos + 1] = 'n';
-                    pos += 2;
-                    break;
-                }
-
-
-                // carriage return (0x0d)
-                case '\r':
-                {
-                    result[pos + 1] = 'r';
-                    pos += 2;
-                    break;
-                }
-
-
-                // horizontal tab (0x09)
-                case '\t':
-                {
-                    result[pos + 1] = 't';
-                    pos += 2;
-                    break;
-                }
-
-
-                default:
-                {
-                    if (c >= 0x00 && c <= 0x1f)
-                    {
-                        // print character c as \uxxxx
-                        sprintf(&result[pos + 1], "u%04x", int(c));
-                        pos += 6;
-                        // overwrite trailing null character
-                        result[pos] = '\\';
+            for (const auto &c: s) {
+                switch (c) {
+                    // quotation mark (0x22)
+                    case '"': {
+                        result[pos + 1] = '"';
+                        pos += 2;
+                        break;
                     }
-                    else
-                    {
-                        // all other characters are added as-is
-                        result[pos++] = c;
+
+
+                        // reverse solidus (0x5c)
+                    case '\\': {
+                        // nothing to change
+                        pos += 2;
+                        break;
                     }
-                    break;
-                }
+
+
+                        // backspace (0x08)
+                    case '\b': {
+                        result[pos + 1] = 'b';
+                        pos += 2;
+                        break;
+                    }
+
+
+                        // formfeed (0x0c)
+                    case '\f': {
+                        result[pos + 1] = 'f';
+                        pos += 2;
+                        break;
+                    }
+
+
+                        // newline (0x0a)
+                    case '\n': {
+                        result[pos + 1] = 'n';
+                        pos += 2;
+                        break;
+                    }
+
+
+                        // carriage return (0x0d)
+                    case '\r': {
+                        result[pos + 1] = 'r';
+                        pos += 2;
+                        break;
+                    }
+
+
+                        // horizontal tab (0x09)
+                    case '\t': {
+                        result[pos + 1] = 't';
+                        pos += 2;
+                        break;
+                    }
+
+
+                    default: {
+                        if (c >= 0x00 && c <= 0x1f) {
+                            // print character c as \uxxxx
+                            sprintf(&result[pos + 1], "u%04x", int(c));
+                            pos += 6;
+                            // overwrite trailing null character
+                            result[pos] = '\\';
+                        } else {
+                            // all other characters are added as-is
+                            result[pos++] = c;
+                        }
+                        break;
+                    }
                 }
             }
 
@@ -8073,7 +8071,7 @@ namespace csv {
      *  @param[in] subset A subset of columns to contain in the JSON.
      *                    Leave empty for original columns.
      */
-    CSV_INLINE std::string CSVRow::to_json(const std::vector<std::string>& subset) const {
+    CSV_INLINE std::string CSVRow::to_json(const std::vector<std::string> &subset) const {
         std::vector<std::string> col_names = subset;
         if (subset.empty()) {
             col_names = this->data ? this->get_col_names() : std::vector<std::string>({});
@@ -8081,9 +8079,9 @@ namespace csv {
 
         const size_t _n_cols = col_names.size();
         std::string ret = "{";
-        
+
         for (size_t i = 0; i < _n_cols; i++) {
-            auto& col = col_names[i];
+            auto &col = col_names[i];
             auto field = this->operator[](col);
 
             // TODO: Possible performance enhancements by caching escaped column names
@@ -8091,7 +8089,7 @@ namespace csv {
 
             // Add quotes around strings but not numbers
             if (field.is_num())
-                 ret += internals::json_escape_string(field.get<csv::string_view>());
+                ret += internals::json_escape_string(field.get<csv::string_view>());
             else
                 ret += '"' + internals::json_escape_string(field.get<csv::string_view>()) + '"';
 
@@ -8111,7 +8109,7 @@ namespace csv {
      *  @param[in] subset A subset of columns to contain in the JSON.
      *                    Leave empty for all columns.
      */
-    CSV_INLINE std::string CSVRow::to_json_array(const std::vector<std::string>& subset) const {
+    CSV_INLINE std::string CSVRow::to_json_array(const std::vector<std::string> &subset) const {
         std::vector<std::string> col_names = subset;
         if (subset.empty())
             col_names = this->data ? this->get_col_names() : std::vector<std::string>({});
@@ -8149,19 +8147,19 @@ namespace csv {
      *  methods like get_mean(), get_counts(), etc... can be used to retrieve statistics.
      */
     CSV_INLINE CSVStat::CSVStat(csv::string_view filename, CSVFormat format) :
-        reader(filename, format) {
+            reader(filename, format) {
         this->calc();
     }
 
     /** Calculate statistics for a CSV stored in a std::stringstream */
-    CSV_INLINE CSVStat::CSVStat(std::stringstream& stream, CSVFormat format) :
-        reader(stream, format) {
+    CSV_INLINE CSVStat::CSVStat(std::stringstream &stream, CSVFormat format) :
+            reader(stream, format) {
         this->calc();
     }
 
     /** Return current means */
     CSV_INLINE std::vector<long double> CSVStat::get_mean() const {
-        std::vector<long double> ret;        
+        std::vector<long double> ret;
         for (size_t i = 0; i < this->get_col_names().size(); i++) {
             ret.push_back(this->rolling_means[i]);
         }
@@ -8170,16 +8168,16 @@ namespace csv {
 
     /** Return current variances */
     CSV_INLINE std::vector<long double> CSVStat::get_variance() const {
-        std::vector<long double> ret;        
+        std::vector<long double> ret;
         for (size_t i = 0; i < this->get_col_names().size(); i++) {
-            ret.push_back(this->rolling_vars[i]/(this->n[i] - 1));
+            ret.push_back(this->rolling_vars[i] / (this->n[i] - 1));
         }
         return ret;
     }
 
     /** Return current mins */
     CSV_INLINE std::vector<long double> CSVStat::get_mins() const {
-        std::vector<long double> ret;        
+        std::vector<long double> ret;
         for (size_t i = 0; i < this->get_col_names().size(); i++) {
             ret.push_back(this->mins[i]);
         }
@@ -8188,7 +8186,7 @@ namespace csv {
 
     /** Return current maxes */
     CSV_INLINE std::vector<long double> CSVStat::get_maxes() const {
-        std::vector<long double> ret;        
+        std::vector<long double> ret;
         for (size_t i = 0; i < this->get_col_names().size(); i++) {
             ret.push_back(this->maxes[i]);
         }
@@ -8206,7 +8204,7 @@ namespace csv {
 
     /** Get data type counts for each column */
     CSV_INLINE std::vector<CSVStat::TypeCount> CSVStat::get_dtypes() const {
-        std::vector<TypeCount> ret;        
+        std::vector<TypeCount> ret;
         for (size_t i = 0; i < this->get_col_names().size(); i++) {
             ret.push_back(this->dtypes[i]);
         }
@@ -8234,7 +8232,7 @@ namespace csv {
             pool.push_back(std::thread(&CSVStat::calc_worker, this, i));
 
         // Block until done
-        for (auto& th : pool)
+        for (auto &th: pool)
             th.join();
 
         this->records.clear();
@@ -8243,7 +8241,7 @@ namespace csv {
     CSV_INLINE void CSVStat::calc() {
         constexpr size_t CALC_CHUNK_SIZE = 5000;
 
-        for (auto& row : reader) {
+        for (auto &row: reader) {
             this->records.push_back(std::move(row));
 
             /** Chunk rows */
@@ -8253,7 +8251,7 @@ namespace csv {
         }
 
         if (!this->records.empty()) {
-          calc_chunk();
+            calc_chunk();
         }
     }
 
@@ -8283,21 +8281,21 @@ namespace csv {
                     this->variance(x_n, i);
                     this->min_max(x_n, i);
                 }
-            }
-            else if (this->reader.get_format().get_variable_column_policy() == VariableColumnPolicy::THROW) {
-                throw std::runtime_error("Line has different length than the others " + internals::format_row(*current_record));
+            } else if (this->reader.get_format().get_variable_column_policy() == VariableColumnPolicy::THROW) {
+                throw std::runtime_error(
+                        "Line has different length than the others " + internals::format_row(*current_record));
             }
 
             ++current_record;
         }
     }
 
-    CSV_INLINE void CSVStat::dtype(CSVField& data, const size_t &i) {
+    CSV_INLINE void CSVStat::dtype(CSVField &data, const size_t &i) {
         /** Given a record update the type counter
          *  @param[in]  record Data observation
          *  @param[out] i      The column index that should be updated
          */
-        
+
         auto type = data.type();
         if (this->dtypes[i].find(type) !=
             this->dtypes[i].end()) {
@@ -8309,7 +8307,7 @@ namespace csv {
         }
     }
 
-    CSV_INLINE void CSVStat::count(CSVField& data, const size_t &i) {
+    CSV_INLINE void CSVStat::count(CSVField &data, const size_t &i) {
         /** Given a record update the frequency counter
          *  @param[in]  record Data observation
          *  @param[out] i      The column index that should be updated
@@ -8336,7 +8334,7 @@ namespace csv {
             this->mins[i] = x_n;
         if (std::isnan(this->maxes[i]))
             this->maxes[i] = x_n;
-        
+
         if (x_n < this->mins[i])
             this->mins[i] = x_n;
         else if (x_n > this->maxes[i])
@@ -8349,21 +8347,21 @@ namespace csv {
          *  @param[in]  x_n Data observation
          *  @param[out] i   The column index that should be updated
          */
-        long double& current_rolling_mean = this->rolling_means[i];
-        long double& current_rolling_var = this->rolling_vars[i];
-        long double& current_n = this->n[i];
+        long double &current_rolling_mean = this->rolling_means[i];
+        long double &current_rolling_var = this->rolling_vars[i];
+        long double &current_n = this->n[i];
         long double delta;
         long double delta2;
 
         current_n++;
-        
+
         if (current_n == 1) {
             current_rolling_mean = x_n;
         } else {
             delta = x_n - current_rolling_mean;
-            current_rolling_mean += delta/current_n;
+            current_rolling_mean += delta / current_n;
             delta2 = x_n - current_rolling_mean;
-            current_rolling_var += delta*delta2;
+            current_rolling_var += delta * delta2;
         }
     }
 
@@ -8375,7 +8373,7 @@ namespace csv {
      *
      *  \return A mapping of column names to csv::DataType enums
      */
-    CSV_INLINE std::unordered_map<std::string, DataType> csv_data_types(const std::string& filename) {
+    CSV_INLINE std::unordered_map<std::string, DataType> csv_data_types(const std::string &filename) {
         CSVStat stat(filename);
         std::unordered_map<std::string, DataType> csv_dtypes;
 
@@ -8383,8 +8381,8 @@ namespace csv {
         auto temp = stat.get_dtypes();
 
         for (size_t i = 0; i < stat.get_col_names().size(); i++) {
-            auto& col = temp[i];
-            auto& col_name = col_names[i];
+            auto &col = temp[i];
+            auto &col_name = col_names[i];
 
             if (col[DataType::CSV_STRING])
                 csv_dtypes[col_name] = DataType::CSV_STRING;
@@ -8403,6 +8401,7 @@ namespace csv {
         return csv_dtypes;
     }
 }
+
 #include <sstream>
 #include <vector>
 
@@ -8438,12 +8437,12 @@ namespace csv {
      *  @snippet tests/test_read_csv.cpp Escaped Comma
      *
      */
-    CSV_INLINE CSVReader operator ""_csv(const char* in, size_t n) {
+    CSV_INLINE CSVReader operator ""_csv(const char *in, size_t n) {
         return parse(csv::string_view(in, n));
     }
 
     /** A shorthand for csv::parse_no_header() */
-    CSV_INLINE CSVReader operator ""_csv_no_header(const char* in, size_t n) {
+    CSV_INLINE CSVReader operator ""_csv_no_header(const char *in, size_t n) {
         return parse_no_header(csv::string_view(in, n));
     }
 
@@ -8455,9 +8454,9 @@ namespace csv {
      *  @param[in] format    Format of the CSV file
      */
     CSV_INLINE int get_col_pos(
-        csv::string_view filename,
-        csv::string_view col_name,
-        const CSVFormat& format) {
+            csv::string_view filename,
+            csv::string_view col_name,
+            const CSVFormat &format) {
         CSVReader reader(filename, format);
         return reader.index_of(col_name);
     }
@@ -8465,17 +8464,17 @@ namespace csv {
     /** Get basic information about a CSV file
      *  @include programs/csv_info.cpp
      */
-    CSV_INLINE CSVFileInfo get_file_info(const std::string& filename) {
+    CSV_INLINE CSVFileInfo get_file_info(const std::string &filename) {
         CSVReader reader(filename);
         CSVFormat format = reader.get_format();
         for (auto it = reader.begin(); it != reader.end(); ++it);
 
         CSVFileInfo info = {
-            filename,
-            reader.get_col_names(),
-            format.get_delim(),
-            reader.n_rows(),
-            reader.get_col_names().size()
+                filename,
+                reader.get_col_names(),
+                format.get_delim(),
+                reader.n_rows(),
+                reader.get_col_names().size()
         };
 
         return info;

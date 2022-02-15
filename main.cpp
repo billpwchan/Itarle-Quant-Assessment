@@ -7,6 +7,7 @@
 #include "trade.h"
 #include "include/CppConsoleTable.hpp"
 
+
 using ConsoleTable = samilton::ConsoleTable;
 
 template<typename T>
@@ -89,21 +90,6 @@ int main() {
         tickAdjTimeList.insert(tickAdjTimeList.end(), timeVec.begin(), timeVec.end());
     }
 
-    std::cout << "Trade. avg. adj. time: " << average(tradeAdjTimeList) << '\n';
-    std::cout << "Tick. avg. adj. time: " << average(tickAdjTimeList) << '\n';
-
-    std::cout << "Trade. median. adj. time: " << median(tradeAdjTimeList) << '\n';
-    std::cout << "Tick. median. adj. time: " << median(tickAdjTimeList) << '\n';
-
-    std::cout << "Longest time between trades: "
-              << *max_element(std::begin(tradeAdjTimeList), std::end(tradeAdjTimeList))
-              << '\n';
-    std::cout << "Longest time between tick changes: "
-              << *max_element(std::begin(tickAdjTimeList), std::end(tickAdjTimeList))
-              << '\n';
-
-    std::cout << "Mean bid-ask spread: " << average(bidAskSpreadList) << '\n';
-    std::cout << "Median bid-ask spread: " << median(bidAskSpreadList) << '\n';
 
     // General Questions
     ConsoleTable questionTable(1, 1, samilton::Alignment::centre);
